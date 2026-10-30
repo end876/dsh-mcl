@@ -188,7 +188,8 @@ mc-launcher/
 - **安全：/api/logs 与 /api/diagnose 的路径穿越**：`instance` 参数现在走 `installedVersions()` 白名单，
   且目录必须落在 `versions/` 里；实测 `..\..\..\..\Downloads\x` 返回 404，读不到游戏目录外的日志
 - **安全：一条畸形请求行会让进程退出**：URL 解析移进 try、整个 handler 包 `.catch`、
-  `sendJson` 兼容已发头的情况、补 `clientError` 处理；实测绝对形式请求目标返回 400，服务继续存活
+  `sendJson` 兼容已发头的情况、补 `clientError` 处理；实测畸形目标不会崩（绝对形式会被归一成
+  路径照常处理，真正畸形的目标返回 400），服务继续存活
 - **安全：整合包解压路径穿越**：新增 `safeJoin()`（拒绝绝对路径 / 盘符 / UNC / 任何 `..` 段），
   `import.mjs` 与 mrpack（files + overrides）全部改用它；越界条目跳过并记一条警告
 - **安装中断不再留半成品**：版本描述 json 改为全部下载完成后才写（tmp + rename），
