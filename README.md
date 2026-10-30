@@ -68,7 +68,7 @@ mcl gui                 # 或直接 mcl
 1. 把仓库放在插件能找到的位置（插件默认找 `~/mc-launcher`，或用环境变量指定）：
 
 ```bash
-git clone <这个仓库> ~/mc-launcher
+git clone https://github.com/<你>/dsh-mcl ~/mc-launcher
 set MCL_HOME=D:\path\to\mc-launcher    # 放别处时用这个
 ```
 
