@@ -4,7 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { GAME_DIR, ROOT } from './paths.mjs';
+import { GAME_DIR, ROOT, VERSIONS_DIR, isInside } from './paths.mjs';
 import { fetchJson } from './http.mjs';
 import { findVersionDir, installedVersions, readLocalVersionJson } from './install.mjs';
 import { RUNTIME_NAME } from './launch.mjs';
@@ -12,10 +12,11 @@ import { listJava } from './java.mjs';
 import { pickSource } from './source.mjs';
 import { inspectArchive, inferMcFromNames } from './mods.mjs';
 import { diagnoseSummary } from './diagnose.mjs';
-import { loadAuth, loginWithDeviceCode } from './auth.mjs';
+import { ensureFreshAuth, loadAuth, loginWithDeviceCode } from './auth.mjs';
 import { listLoaderVersions, detectLoader as detectLoaderId, loaderLabelFor } from './loader.mjs';
 
-const MSA_CLIENT_ID = 'c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb';
+// 默认用社区验证过的 client id（Prism Launcher 的），但允许用户换成自己的 Azure 应用
+const MSA_CLIENT_ID = process.env.MCL_CLIENT_ID || 'c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb';
 import { searchProjects, analyzeProjects, installModsBatch, getProjectDetail, installShader, resolveModIds } from './modrinth.mjs';
 
 const UI_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui');
@@ -64,9 +65,15 @@ function javaMajorFor(id) {
 
 /** 版本目录；实例名可能已经被删掉，找不到就返回 null */
 function safeVersionDir(id) {
+  const name = String(id ?? '').trim();
+  if (!name) return null;
+  // 白名单：只认已登记的实例名，杜绝 `..\..\..` 这种拼路径（/api/logs、/api/diagnose 都走这里）
+  if (!installedVersions().includes(name)) return null;
   try {
-    const dir = findVersionDir(id);
-    return dir && fs.existsSync(dir) ? dir : null;
+    const dir = findVersionDir(name);
+    if (!dir || !fs.existsSync(dir)) return null;
+    if (!isInside(VERSIONS_DIR, dir)) return null;
+    return dir;
   } catch {
     return null;
   }
@@ -213,13 +220,26 @@ function corsFor(req) {
 
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);
-  res.writeHead(status, {
-    ...res.cors,
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store',
-    'Content-Length': Buffer.byteLength(body),
-  });
-  res.end(body);
+  try {
+    if (res.headersSent) {
+      res.end();
+      return;
+    }
+    res.writeHead(status, {
+      ...res.cors,
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Content-Length': Buffer.byteLength(body),
+    });
+    res.end(body);
+  } catch {
+    // 头已经发出去了（SSE 之类）就别再写，静默结束，避免 ERR_HTTP_HEADERS_SENT 逃逸
+    try {
+      res.end();
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 function serveStatic(res, file) {
@@ -317,6 +337,7 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
 
   let lastLaunched = null;
   let scannedRuntime = false;
+  let authFlow = false; // 同一时间只允许一个设备码流程
 
   /** 服务重启后仍能显示上次跑的是哪个实例（按运行时快照的修改时间猜） */
   function guessLastInstance() {
@@ -449,8 +470,19 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
   }
 
   let currentUrl = '';
-  const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url, 'http://127.0.0.1');
+
+  /**
+   * 单个请求的处理。任何异常都不许逃逸：
+   * createServer 不消费 handler 返回的 Promise，逃逸出去就是未捕获拒绝，Node/DSH 会直接退出。
+   */
+  async function handleRequest(req, res) {
+    let url;
+    try {
+      url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }).end('bad request target');
+      return;
+    }
     const route = url.pathname;
     res.cors = corsFor(req);
 
@@ -616,7 +648,7 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         if (body.memory) args.push('--memory', String(body.memory));
         if (body.width) args.push('--width', String(body.width));
         if (body.height) args.push('--height', String(body.height));
-        if (body.auth && loadAuth()) args.push('--auth');
+        if (body.auth && (await ensureFreshAuth())) args.push('--auth');
         lastLaunched = version;
         runJob('launch', args, { version, username: body.username || 'Player' });
         sendJson(res, 200, { ok: true });
@@ -654,22 +686,8 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
           .replace(/[\u00a0\u3000]/g, ' ');
         const target = path.resolve(raw);
         if (!raw || !fs.existsSync(target)) {
-          // 顺便看看目录里有没有相似的文件，方便排查
-          let near = [];
-          try {
-            const dir = path.dirname(target);
-            const want = path.basename(target).slice(0, 6);
-            near = fs
-              .readdirSync(dir)
-              .filter((name) => name.includes(want.slice(0, 3)))
-              .slice(0, 10);
-          } catch {
-            /* ignore */
-          }
-          sendJson(res, 400, {
-            error: `文件不存在：${target}`,
-            near,
-          });
+          // 不回显同目录的文件名（避免被当成目录枚举接口）
+          sendJson(res, 400, { error: `文件不存在：${target}` });
           return;
         }
         const stat = fs.statSync(target);
@@ -883,6 +901,11 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
           sendJson(res, 400, { error: '缺少实例名' });
           return;
         }
+        // 只诊断已登记的实例（diagnose 会读该目录下的日志，别让它指向任意路径）
+        if (!safeVersionDir(instance)) {
+          sendJson(res, 404, { error: `找不到实例 ${instance}` });
+          return;
+        }
         try {
           sendJson(res, 200, diagnoseSummary(instance));
         } catch (error) {
@@ -922,22 +945,41 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
       if (route === '/api/auth/start' && req.method === 'POST') {
         const body = await readBody(req);
         const clientId = String(body.clientId || MSA_CLIENT_ID);
+        if (authFlow) {
+          sendJson(res, 409, { error: '上一次登录还在进行中，等它超时或先取消' });
+          return;
+        }
+        authFlow = true;
+        let timer;
         try {
           let resolveCode;
-          const codeReady = new Promise((resolve) => {
+          let rejectCode;
+          // 设备码请求本身也可能失败（断网 / client id 非法），必须 reject 掉，否则这个请求永远挂着
+          const codeReady = new Promise((resolve, reject) => {
             resolveCode = resolve;
+            rejectCode = reject;
           });
+          timer = setTimeout(() => rejectCode(new Error('申请设备码超时')), 30_000);
           // 后台跑完整流程，界面先拿设备码
           loginWithDeviceCode({
             clientId,
             onDeviceCode: (info) => resolveCode(info),
           })
             .then((account) => broadcast({ type: 'auth', status: 'ok', name: account.name, uuid: account.uuid }))
-            .catch((error) => broadcast({ type: 'auth', status: 'error', message: error.message }));
+            .catch((error) => {
+              rejectCode(error); // 还没拿到码就失败了 → 让 HTTP 请求立刻报错
+              broadcast({ type: 'auth', status: 'error', message: error.message });
+            })
+            .finally(() => {
+              authFlow = false;
+            });
           const info = await codeReady;
           sendJson(res, 200, { ...info, clientId });
         } catch (error) {
+          authFlow = false;
           sendJson(res, 500, { error: error.message });
+        } finally {
+          if (timer) clearTimeout(timer);
         }
         return;
       }
@@ -980,6 +1022,30 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
       res.writeHead(404).end('not found');
     } catch (error) {
       sendJson(res, 500, { error: error.message });
+    }
+  }
+
+  const server = http.createServer((req, res) => {
+    handleRequest(req, res).catch((error) => {
+      try {
+        if (!res.headersSent) sendJson(res, 500, { error: error?.message ?? 'internal error' });
+        else res.end();
+      } catch {
+        try {
+          res.destroy();
+        } catch {
+          /* ignore */
+        }
+      }
+    });
+  });
+
+  // 畸形请求行（绝对形式 target、超长头等）：直接断开，别让它顶到默认错误路径
+  server.on('clientError', (_error, socket) => {
+    try {
+      socket.destroy();
+    } catch {
+      /* ignore */
     }
   });
 

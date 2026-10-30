@@ -57,41 +57,54 @@ const RULES = [
   },
 ];
 
-function newestFile(dir) {
+function newestIn(dir) {
   try {
     const files = fs
       .readdirSync(dir)
       .filter((name) => name.endsWith('.txt') || name.endsWith('.log'))
-      .map((name) => ({ name, stat: fs.statSync(path.join(dir, name)) }))
+      .map((name) => ({ file: path.join(dir, name), stat: fs.statSync(path.join(dir, name)) }))
       .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
-    if (files.length === 0) return null;
-    return path.join(dir, files[0].name);
+    return files[0] ?? null;
   } catch {
     return null;
+  }
+}
+
+/** 读文件末尾若干字节（崩溃堆栈在日志末尾，读开头会漏） */
+function readTail(file, bytes = 256 * 1024) {
+  try {
+    const stat = fs.statSync(file);
+    if (stat.size === 0) return '';
+    const length = Math.min(bytes, stat.size);
+    const fd = fs.openSync(file, 'r');
+    try {
+      const buf = Buffer.alloc(length);
+      fs.readSync(fd, buf, 0, length, stat.size - length);
+      return buf.toString('utf8');
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return '';
   }
 }
 
 /** 分析某个实例最近一次崩溃 */
 export function diagnose(instanceId) {
   const dir = findVersionDir(instanceId);
-  const candidates = [
-    path.join(dir, 'crash-reports'),
-    path.join(dir, 'logs'),
-  ];
-
-  let source = null;
-  for (const candidate of candidates) {
-    const file = newestFile(candidate);
-    if (file) {
-      source = file;
-      break;
-    }
-  }
-  if (!source) {
+  // 崩溃报告和普通日志各取最新，再比 mtime 取全局最新：别拿上周的崩溃当今天的问题
+  const crash = newestIn(path.join(dir, 'crash-reports'));
+  const log = newestIn(path.join(dir, 'logs'));
+  const newest = !crash ? log : !log ? crash : crash.stat.mtimeMs >= log.stat.mtimeMs ? crash : log;
+  if (!newest) {
     return { instance: instanceId, source: null, findings: [], excerpt: '', message: '没有找到崩溃日志（游戏可能还没运行过）' };
   }
 
-  const text = fs.readFileSync(source, 'utf8').slice(0, 200_000);
+  const source = newest.file;
+  const isCrashReport = source.includes(`${path.sep}crash-reports${path.sep}`);
+  // 崩溃报告读开头（摘要在前），latest.log 读末尾（堆栈在末尾）
+  const text = isCrashReport ? fs.readFileSync(source, 'utf8').slice(0, 200_000) : readTail(source, 256 * 1024);
+
   const findings = [];
   for (const rule of RULES) {
     const match = text.match(rule.pattern);

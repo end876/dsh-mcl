@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { download, fetchJson, runPool } from './http.mjs';
 import { openZipBuffer } from './zip.mjs';
-import { ensureDir, GAME_DIR, versionDir } from './paths.mjs';
+import { ensureDir, GAME_DIR, safeJoin, versionDir } from './paths.mjs';
 import { ensureFabricInstance, ensureInstance, instanceModsDir } from './fabric.mjs';
 import { ensureLoaderInstance, installLoader } from './loader.mjs';
 import { Progress, ok, step, warn } from './log.mjs';
@@ -301,6 +301,7 @@ export async function installModpack(projectId, { mcVersion, sourceName = 'auto'
   ensureDir(instanceRoot);
 
   const files = index.files ?? [];
+  let skipped = 0;
   if (files.length > 0) {
     step(`下载整合包内容（${files.length} 个文件）`);
     const progress = new Progress('pack files', files.length, { count: true });
@@ -310,7 +311,14 @@ export async function installModpack(projectId, { mcVersion, sourceName = 'auto'
         const url = item.downloads?.[0];
         const rel = String(item.path ?? '').replace(/^\/+/, '');
         if (url && rel) {
-          await download({ url, dest: path.join(instanceRoot, rel), sha1: item.hashes?.sha1, size: item.fileSize });
+          try {
+            // 条目路径来自不可信的整合包，必须夹在实例目录里
+            const dest = safeJoin(instanceRoot, rel);
+            await download({ url, dest, sha1: item.hashes?.sha1, size: item.fileSize });
+          } catch (error) {
+            skipped += 1;
+            warn(`跳过整合包条目 ${rel}：${error.message}`);
+          }
         }
         progress.add(1);
       },
@@ -327,11 +335,17 @@ export async function installModpack(projectId, { mcVersion, sourceName = 'auto'
     for (const entry of overrides) {
       if (entry.isDir) continue;
       const rel = entry.name.replace(/^(client-)?overrides\//, '');
-      const dest = path.join(instanceRoot, rel);
-      ensureDir(path.dirname(dest));
-      fs.writeFileSync(dest, zip.read(entry));
+      try {
+        const dest = safeJoin(instanceRoot, rel);
+        ensureDir(path.dirname(dest));
+        fs.writeFileSync(dest, zip.read(entry));
+      } catch (error) {
+        skipped += 1;
+        warn(`跳过覆盖文件 ${rel}：${error.message}`);
+      }
     }
   }
+  if (skipped > 0) warn(`有 ${skipped} 个越界条目被跳过（整合包可能有问题）`);
 
   ok(`整合包已安装到 ${instance}`);
   return { instance, name: index.name ?? file.filename, version: index.versionId ?? '', files: files.length };

@@ -2,15 +2,20 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const DEFAULT_PORT = 51730;
 const PORT_SPAN = 20; // 和启动器的端口兜底范围一致：51730 ~ 51749
 const INFO_FILE = path.join(os.homedir(), '.mcl', 'server.json');
+const MAX_RESTARTS = 3;
+// 插件被单独搬走时，仍然能找回同一仓库里的启动器源码
+const SELF_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function candidateRoots() {
   const home = os.homedir();
   const roots = [];
   if (process.env.MCL_HOME) roots.push(process.env.MCL_HOME);
+  roots.push(SELF_ROOT);
   roots.push(path.join(home, 'Documents', 'mc-launcher'));
   roots.push(path.join(home, 'mc-launcher'));
   return roots;
@@ -65,42 +70,86 @@ async function findRunningPort() {
   return null;
 }
 
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
  * Host 半边：保证本地启动器服务在跑。
  * 界面本身由 Client 半边用 React 渲染，这里只负责进程生命周期。
+ *
+ * 所有异常都在本函数里吞掉：DSH 是 fail-loud 的，这里的 Promise 拒绝会直接结束整个应用。
  */
 export function apply(ctx) {
   let child = null;
   let disposed = false;
+  let restarts = 0;
+  let stderrTail = [];
+
+  function log(message) {
+    try {
+      console.error(`[mc-launcher] ${message}`); // 进 DSH 宿主日志
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function startOnce() {
+    if (disposed) return;
+    if (await findRunningPort()) return;
+    if (disposed) return; // 探测期间插件被卸载了
+
+    const found = findLauncher();
+    if (!found) {
+      log('找不到启动器源码（试过 MCL_HOME / 插件所在仓库 / Documents/mc-launcher）');
+      return;
+    }
+
+    const env = { ...process.env };
+    // 打包版 DSH 的 execPath 是 Electron 主程序，这个变量让它以纯 Node 运行脚本
+    if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = '1';
+
+    const spawned = spawn(process.execPath, [found.entry, 'gui', '--port', String(DEFAULT_PORT), '--no-open'], {
+      cwd: found.root,
+      env,
+      stdio: ['ignore', 'ignore', 'pipe'],
+      windowsHide: true,
+    });
+    child = spawned;
+    stderrTail = [];
+
+    spawned.stderr?.on('data', (chunk) => {
+      for (const line of String(chunk).split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        stderrTail.push(line.trim());
+        if (stderrTail.length > 40) stderrTail.shift();
+      }
+    });
+
+    spawned.on('error', (error) => {
+      log(`拉起失败：${error.message}`);
+      if (child === spawned) child = null;
+    });
+
+    spawned.on('exit', (code) => {
+      if (child !== spawned) return;
+      child = null;
+      if (disposed) return;
+      const tail = stderrTail.slice(-3).join(' | ');
+      log(`启动器退出（code=${code}）${tail ? `：${tail}` : ''}`);
+      // 有限次退避重启：偶发崩溃能自愈，端口全占那种重试几次也就别试了
+      if (restarts < MAX_RESTARTS) {
+        restarts += 1;
+        const delay = 3000 * restarts;
+        wait(delay).then(() => {
+          if (!disposed) startOnce().catch((error) => log(`重启失败：${error.message}`));
+        });
+      }
+    });
+  }
 
   ctx.effect(() => {
     disposed = false;
-
-    (async () => {
-      if (await findRunningPort()) return;
-      if (disposed) return; // 探测期间插件就被卸载了，别再拉进程
-
-      const found = findLauncher();
-      if (!found) return;
-
-      const env = { ...process.env };
-      // 打包版 DSH 的 execPath 是 Electron 主程序，这个变量让它以纯 Node 运行脚本
-      if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = '1';
-
-      const spawned = spawn(process.execPath, [found.entry, 'gui', '--port', String(DEFAULT_PORT), '--no-open'], {
-        cwd: found.root,
-        env,
-        stdio: 'ignore',
-        windowsHide: true,
-      });
-      child = spawned;
-      spawned.on('error', () => {
-        if (child === spawned) child = null;
-      });
-      spawned.on('exit', () => {
-        if (child === spawned) child = null;
-      });
-    })();
+    restarts = 0;
+    startOnce().catch((error) => log(`初始化失败：${error?.message ?? error}`));
 
     return () => {
       disposed = true;

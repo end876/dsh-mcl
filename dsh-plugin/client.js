@@ -272,7 +272,8 @@ window.__ModuleLoader__.load({
         return;
       }
       if (payload.type === 'auth') {
-        evStore.auth = payload;
+        // 带上到达时间：面板只认「本次登录发起之后」的事件，避免上一次的结果把新面板顶掉
+        evStore.auth = { ...payload, at: Date.now() };
         evNotify();
         refreshLauncher();
         return;
@@ -1529,7 +1530,14 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /** 外层只判断显示/隐藏：隐藏时整块卸载，useLauncher / useEvents 的订阅和定时器一起停 */
     function LauncherPanel() {
+      const embedded = useEmbedded();
+      if (!embedded) return null;
+      return h(PanelBody, null);
+    }
+
+    function PanelBody() {
       const embedded = useEmbedded();
       const { state, error, reload } = useLauncher();
       const events = useEvents();
@@ -1780,21 +1788,25 @@ window.__ModuleLoader__.load({
             /* ignore */
           }
         }, 3000);
-        const timeout = window.setTimeout(() => setLogin(null), 300000);
+        // 设备码有效期按服务端给的来（微软一般 15 分钟），到期就收起面板
+        const ttl = Number(login.expiresIn) > 0 ? Number(login.expiresIn) * 1000 : 900_000;
+        const timeout = window.setTimeout(() => setLogin(null), ttl);
         return () => {
           window.clearInterval(timer);
           window.clearTimeout(timeout);
         };
       }, [login, reload]);
 
-      // SSE 推来登录结果时立刻收掉设备码面板，不用等轮询
+      // SSE 推来登录结果时立刻收掉设备码面板；只认本次登录发起之后的事件
       useEffect(() => {
         if (!login?.userCode) return;
-        if (events.auth?.status === 'ok') {
+        const event = events.auth;
+        if (!event || !event.at || event.at < (login.startedAt ?? 0)) return;
+        if (event.status === 'ok') {
           setLogin(null);
           reload();
-        } else if (events.auth?.status === 'error') {
-          setLogin({ error: events.auth.message || '授权失败' });
+        } else if (event.status === 'error') {
+          setLogin({ error: event.message || '授权失败' });
         }
       }, [events.auth, login, reload]);
 
@@ -1895,7 +1907,13 @@ window.__ModuleLoader__.load({
         setLoginBusy(true);
         try {
           const info = await post('/api/auth/start');
-          setLogin({ userCode: info.userCode, verificationUri: info.verificationUri });
+          setLogin({
+            userCode: info.userCode,
+            verificationUri: info.verificationUri,
+            expiresIn: info.expiresIn,
+            // 时间点：只接受此后到达的 auth 事件
+            startedAt: Date.now(),
+          });
         } catch (err) {
           setLogin({ error: err.message });
         } finally {
@@ -2106,6 +2124,11 @@ window.__ModuleLoader__.load({
                     ),
                   ),
                   h('div', null, '授权完成后这里会自动变成已登录'),
+                  h(
+                    'div',
+                    { style: { marginTop: 4, opacity: 0.75 } },
+                    '用自己的 Azure 应用：设置环境变量 MCL_CLIENT_ID 后重启 DSH',
+                  ),
                 ),
           )
         : null;

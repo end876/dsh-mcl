@@ -45,3 +45,32 @@ export function exists(p) {
 export function versionDir(id) {
   return path.join(VERSIONS_DIR, id);
 }
+
+/**
+ * 把压缩包里的相对路径拼到 root 下，并保证结果不会跑出 root。
+ * 拒绝绝对路径、盘符、UNC、以及含 .. 段的条目（整合包是不可信输入）。
+ */
+export function safeJoin(root, rel) {
+  const raw = String(rel ?? '');
+  if (!raw) throw new Error('空的条目路径');
+  if (/^[a-zA-Z]:/.test(raw) || raw.startsWith('/') || raw.startsWith('\\')) {
+    throw new Error(`拒绝绝对路径条目：${raw}`);
+  }
+  const normalized = path.normalize(raw);
+  // 任何 .. 段都拒绝（不静默改写路径），打包/解包两边都用它
+  if (raw.split(/[\\/]+/).includes('..') || normalized.split(/[\\/]+/).includes('..')) {
+    throw new Error(`拒绝越界路径条目：${raw}`);
+  }
+  const target = path.resolve(root, normalized);
+  if (!isInside(root, target)) {
+    throw new Error(`拒绝越界路径条目：${raw}`);
+  }
+  return target;
+}
+
+/** 判断 resolved 是否在 root 里面（含 root 本身） */
+export function isInside(root, target) {
+  const resolvedRoot = path.resolve(root);
+  const resolved = path.resolve(target);
+  return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep);
+}

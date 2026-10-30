@@ -50,7 +50,8 @@ export function findVersionDir(id) {
       const full = path.join(VERSIONS_DIR, entry.name);
       let files = [];
       try {
-        files = fs.readdirSync(full).filter((name) => name.endsWith('.json'));
+        // 跳过隐藏文件（.mcl-runtime.json 这类快照不是版本描述）
+        files = fs.readdirSync(full).filter((name) => name.endsWith('.json') && !name.startsWith('.'));
       } catch {
         continue;
       }
@@ -71,17 +72,31 @@ export function findVersionDir(id) {
 
 export function readLocalVersionJson(id) {
   const dir = findVersionDir(id);
-  let file = path.join(dir, `${id}.json`);
-  if (!exists(file)) {
+  const exact = path.join(dir, `${id}.json`);
+  // 目录名和 id 不一致时退而求其次，但只认"像版本描述"的 json，且坏文件直接跳过
+  const others = versionJsonFiles(dir).filter((file) => file !== exact);
+  for (const file of [exact, ...others]) {
+    if (!exists(file)) continue;
     try {
-      const candidates = fs.readdirSync(dir).filter((name) => name.endsWith('.json'));
-      if (candidates.length > 0) file = path.join(dir, candidates[0]);
+      const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (json && (json.id || json.mainClass || json.inheritsFrom)) return json;
     } catch {
-      return null;
+      /* 截断/损坏的 json 跳过，别让整个状态接口挂掉 */
     }
   }
-  if (!exists(file)) return null;
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
+  return null;
+}
+
+/** 目录里像版本描述的 json（排除点开头的运行时快照） */
+function versionJsonFiles(dir) {
+  try {
+    return fs
+      .readdirSync(dir)
+      .filter((name) => name.endsWith('.json') && !name.startsWith('.'))
+      .map((name) => path.join(dir, name));
+  } catch {
+    return [];
+  }
 }
 
 /** 安装一个原版版本 */
@@ -101,8 +116,8 @@ export async function installVersion(target, { sourceName = 'auto', force = fals
   step('获取版本描述 json');
   const versionJson = await dl.json((s) => s.versionJsonUrl(entry));
   if (versionJson.id !== id) warn(`版本描述 id 不一致：期望 ${id}，实际 ${versionJson.id}`);
-  fs.writeFileSync(path.join(dir, `${id}.json`), `${JSON.stringify(versionJson, null, 2)}\n`);
-  ok('版本描述已保存');
+  // 注意：版本描述**最后**才落盘（见函数末尾），否则下载中断后会被当成"已安装"
+  ok('版本描述已获取');
 
   // 客户端 jar
   const client = versionJson.downloads?.client;
@@ -175,6 +190,13 @@ export async function installVersion(target, { sourceName = 'auto', force = fals
       force,
     });
   }
+
+  // 全部下载成功后才写版本描述：中途失败不会留下"看起来装好了"的半成品
+  const jsonPath = path.join(dir, `${id}.json`);
+  const tmpPath = `${jsonPath}.tmp`;
+  fs.writeFileSync(tmpPath, `${JSON.stringify(versionJson, null, 2)}\n`);
+  fs.renameSync(tmpPath, jsonPath);
+  ok('版本描述已保存');
 
   ok(`版本 ${id} 安装完成`);
   return { id, dir, versionJson, libraries };

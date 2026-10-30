@@ -64,6 +64,27 @@
 - [x] 搜索结果加 `categoriesZh`（中文分类，顺带过滤 loader 名噪音）
 - [x] CLI 帮助补上 `mcl mods`（批量装模组）
 
+### 0.5.2（2026-10-30）
+
+外部评测（v0.4.0 代码审查报告）修复项：
+
+- [x] **高危**：`/api/logs`、`/api/diagnose` 的 `instance` 路径穿越 → 白名单 + `versions/` 包含校验
+- [x] **高危**：畸形请求行使进程退出 → URL 解析进 try、handler `.catch`、`clientError`、`sendJson` 防 headersSent
+- [x] **高危**：整合包解压路径穿越 → `safeJoin()`（import + mrpack files/overrides）
+- [x] 版本描述 json 最后写（tmp+rename）；损坏 json 不再让 `/api/state` 500；版本扫描排除 `.mcl-runtime.json`
+- [x] Fabric 依赖 sha1/size 字段修正（`lib.sha1` / `lib.size`）
+- [x] 诊断取 crash-reports/logs 全局最新；`latest.log` 读末尾 256KB
+- [x] 登录：按 `expires_in` 轮询、设备码申请失败立刻报错、并发互斥；新增 refresh_token 自动续期
+- [x] `MCL_CLIENT_ID` 环境变量 + 插件提示；Host 半边 `.catch` / stderr / 退避重启 / 自身路径兜底
+- [x] 插件 peerDependencies + engines；隐藏浮窗整块卸载；auth SSE 事件带时间戳
+- [x] `mcl --help`；fetchBuffer 不重试 4xx；mods.toml 依赖类型过滤；inspect-path 不再回显目录
+
+剩余（未做）：
+
+- [ ] **Quilt 支持**（评测里唯一没做的加载器）
+- [ ] 凭据仍是 `~/.mcl/auth.json` 明文（0600）；要不要加密/系统凭据库另议
+- [ ] 评测里的低危项：版本目录解析收口、安装状态可恢复、长任务取消等（见 P1/P2）
+
 ### 0.5.1（2026-10-30）
 
 - [x] **模组库装错实例**：`/api/mods/install-batch` 把请求里的 `loader` 丢了，选了 Forge/NeoForge 实例

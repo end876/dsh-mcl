@@ -229,7 +229,13 @@ export function inspectArchive(buf, fileName = '') {
       loaderConstraint: parsed.modLoader ?? null,
       description: String(first.description ?? '').slice(0, 300),
       depends: parsed.dependencies
-        .filter((dep) => dep.modId && !PLATFORM_DEPS.has(dep.modId) && String(dep.mandatory ?? 'true') !== 'false')
+        .filter((dep) => {
+          if (!dep.modId || PLATFORM_DEPS.has(dep.modId)) return false;
+          // NeoForge 用 type="required|optional|incompatible"，Forge 用 mandatory=true/false
+          const kind = String(dep.type ?? '').toLowerCase();
+          if (kind) return kind === 'required';
+          return String(dep.mandatory ?? 'true').toLowerCase() !== 'false';
+        })
         .map((dep) => ({ id: dep.modId, range: dep.versionRange ?? null })),
       ambiguous: !isNeo,
       hint: null,

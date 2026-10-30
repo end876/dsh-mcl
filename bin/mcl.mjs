@@ -13,7 +13,7 @@ import { installMod, installModpack, installModsBatch } from '../src/modrinth.mj
 import { scanAll, scanInstance } from '../src/dupes.mjs';
 import { importArchive } from '../src/import.mjs';
 import { diagnoseSummary } from '../src/diagnose.mjs';
-import { loadAuth, loginWithDeviceCode } from '../src/auth.mjs';
+import { ensureFreshAuth, loadAuth, loginWithDeviceCode } from '../src/auth.mjs';
 import { fmtBytes, c, info, ok, fail, say, step, warn } from '../src/log.mjs';
 
 function parseArgs(argv) {
@@ -111,7 +111,8 @@ async function cmdLaunch(positional, flags) {
     height: flags.height ? Number(flags.height) : undefined,
     detach: Boolean(flags.detach),
     autoDownloadJava: flags['no-download-java'] ? false : true,
-    auth: flags.auth ? loadAuth() : null,
+    // 快过期就先刷新；刷新失败就退回离线，别拿过期 token 启动
+    auth: flags.auth ? await ensureFreshAuth() : null,
   };
   if (options.auth && !flags.user) options.username = options.auth.name;
   if (flags['dry-run']) {
@@ -379,7 +380,13 @@ async function cmdGui(positional, flags) {
 }
 
 async function main() {
-  const { positional, flags } = parseArgs(process.argv.slice(2));
+  const raw = process.argv.slice(2);
+  // --help / -h 要打印帮助，不能因为 positional 为空就回落成 gui
+  if (raw.includes('--help') || raw.includes('-h') || raw.includes('-?')) {
+    cmdHelp();
+    return;
+  }
+  const { positional, flags } = parseArgs(raw);
   const command = positional[0] ?? 'gui';
   switch (command) {
     case 'gui':

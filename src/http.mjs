@@ -31,6 +31,7 @@ export async function fetchBuffer(url, { retries = 3, timeout = DEFAULT_TIMEOUT 
       return Buffer.from(await res.arrayBuffer());
     } catch (error) {
       lastError = error;
+      if (lastError?.retriable === false) break; // 404/403 这类别重试了
       if (attempt === retries) break;
       await sleep(400 * (attempt + 1));
     } finally {

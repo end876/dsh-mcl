@@ -80,11 +80,13 @@ export async function installFabric(mcVersion, { loaderVersion, sourceName = 'au
       async (lib) => {
         const relPath = libraryRelPath(lib);
         const url = mirrorMaven(source.libraryUrl(lib, relPath));
+        // Fabric 元数据把 sha1/size 放在库对象顶层，不一定是 downloads.artifact
+        const artifact = lib.downloads?.artifact ?? {};
         await download({
           url,
           dest: path.join(LIBRARIES_DIR, relPath),
-          sha1: lib.downloads?.artifact?.sha1,
-          size: lib.downloads?.artifact?.size,
+          sha1: lib.sha1 ?? artifact.sha1,
+          size: lib.size ?? artifact.size,
         });
         progress.add(1);
       },

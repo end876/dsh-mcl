@@ -155,6 +155,35 @@ mc-launcher/
 
 ## 更新日志
 
+### 0.5.2（2026-10-30）
+
+外部技术评测（v0.4.0 代码审查）里的高危/中危项修复：
+
+- **安全：/api/logs 与 /api/diagnose 的路径穿越**：`instance` 参数现在走 `installedVersions()` 白名单，
+  且目录必须落在 `versions/` 里；实测 `..\..\..\..\Downloads\x` 返回 404，读不到游戏目录外的日志
+- **安全：一条畸形请求行会让进程退出**：URL 解析移进 try、整个 handler 包 `.catch`、
+  `sendJson` 兼容已发头的情况、补 `clientError` 处理；实测绝对形式请求目标返回 400，服务继续存活
+- **安全：整合包解压路径穿越**：新增 `safeJoin()`（拒绝绝对路径 / 盘符 / UNC / 任何 `..` 段），
+  `import.mjs` 与 mrpack（files + overrides）全部改用它；越界条目跳过并记一条警告
+- **安装中断不再留半成品**：版本描述 json 改为全部下载完成后才写（tmp + rename），
+  `readLocalVersionJson` 遇到截断/损坏的 json 跳过（不再让 `/api/state` 500），
+  扫描版本目录时排除 `.mcl-runtime.json` 这类隐藏文件
+- Fabric 依赖补上 sha1/size 校验（`lib.sha1` / `lib.size` 顶层字段，之前只读 `downloads.artifact`）
+- 崩溃诊断：在 crash-reports 与 logs 里取**全局最新**的文件；`latest.log` 改为读末尾 256KB
+  （堆栈在末尾，读开头会漏）
+- 登录链路：设备码轮询时长按微软返回的 `expires_in`（约 15 分钟）走，不再 5 分钟就放弃；
+  同一时间只允许一个设备码流程；设备码申请失败会立刻返回错误而不是把请求挂住；
+  **新增 refresh_token 自动续期**（`ensureFreshAuth`，快过期时用 refresh_token 换新令牌，失败则退回离线）
+- 支持 `MCL_CLIENT_ID` 环境变量换成自己的 Azure 应用（插件登录面板有提示）
+- 插件 Host 半边：异步初始化补 `.catch`（未捕获拒绝会让 DSH fail-loud 退出）、
+  收集子进程 stderr 尾部并写宿主日志、意外退出时有限次退避重启、插件被搬走也能按自身路径找回源码
+- 插件补 `peerDependencies`（cordis / dsh / dsh-client-ui-slots / react）与 `engines`
+- 插件隐藏浮窗时**整个卸载面板**（订阅和定时器一起停，不再后台轮询）
+- 登录的 SSE 事件带时间戳，只认本次登录之后的事件（避免上一次的结果把新面板顶掉）
+- `mcl --help` / `mcl -h` 现在打印帮助（之前 positional 为空会回落成 `gui`）
+- 查询接口遇到 404/403 不再重试；mods.toml 依赖按 NeoForge `type="required"` / Forge `mandatory` 过滤
+- `/api/mod/inspect-path` 文件不存在时不再回显同目录文件名（避免被当目录枚举接口）
+
 ### 0.5.1（2026-10-30）
 
 - **修模组库装错实例**：`/api/mods/install-batch` 之前把请求里的 `loader` 丢了，选 Forge/NeoForge 实例

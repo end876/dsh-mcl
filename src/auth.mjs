@@ -130,6 +130,7 @@ export async function fetchProfile(mcAccessToken) {
 /**
  * 完整登录流程。
  * onDeviceCode 拿到 { userCode, verificationUri, expiresIn } 后展示给用户。
+ * 轮询时长按微软给的 expires_in 走（通常 900 秒），别自己拍一个 5 分钟。
  */
 export async function loginWithDeviceCode({ clientId, onDeviceCode, onTick } = {}) {
   const device = await requestDeviceCode(clientId);
@@ -138,7 +139,11 @@ export async function loginWithDeviceCode({ clientId, onDeviceCode, onTick } = {
     verificationUri: device.verification_uri,
     expiresIn: device.expires_in,
   });
-  const token = await pollForToken(clientId, device.device_code, { onTick });
+  const token = await pollForToken(clientId, device.device_code, {
+    interval: device.interval ?? 5,
+    timeoutMs: ((device.expires_in ?? 900) + 30) * 1000,
+    onTick,
+  });
   const { xstsToken, uhs } = await xboxAuth(token.access_token);
   const mc = await minecraftLogin(xstsToken, uhs);
   const profile = await fetchProfile(mc.accessToken);
@@ -153,4 +158,49 @@ export async function loginWithDeviceCode({ clientId, onDeviceCode, onTick } = {
   };
   saveAuth(record);
   return record;
+}
+
+/** 用 refresh_token 换新的 MC 令牌（省得每 24 小时重走一遍设备码） */
+export async function refreshAuth(record, { clientId } = {}) {
+  if (!record?.refreshToken) throw new Error('没有 refresh_token，需要重新登录');
+  const id = clientId || record.clientId;
+  const { ok, data } = await postForm(TOKEN_URL, {
+    grant_type: 'refresh_token',
+    client_id: id,
+    refresh_token: record.refreshToken,
+    scope: SCOPES,
+  });
+  if (!ok || !data.access_token) {
+    throw new Error(`刷新凭证失败：${data.error_description || data.error || 'unknown'}`);
+  }
+  const { xstsToken, uhs } = await xboxAuth(data.access_token);
+  const mc = await minecraftLogin(xstsToken, uhs);
+  const profile = await fetchProfile(mc.accessToken);
+  const next = {
+    clientId: id,
+    name: profile.name,
+    uuid: profile.id,
+    accessToken: mc.accessToken,
+    refreshToken: data.refresh_token ?? record.refreshToken,
+    expiresAt: Date.now() + (mc.expiresIn ?? 86_400) * 1000,
+    updatedAt: new Date().toISOString(),
+  };
+  saveAuth(next);
+  return next;
+}
+
+/**
+ * 拿一份「现在能用」的凭证：快过期就先刷新。
+ * 刷新失败时返回 null（调用方退回离线，别拿着过期 token 去启动）。
+ */
+export async function ensureFreshAuth({ marginMs = 120_000, clientId } = {}) {
+  const record = loadAuth();
+  if (!record) return null;
+  const stale = typeof record.expiresAt !== 'number' || record.expiresAt - Date.now() < marginMs;
+  if (!stale) return record;
+  try {
+    return await refreshAuth(record, { clientId });
+  } catch {
+    return null;
+  }
 }
