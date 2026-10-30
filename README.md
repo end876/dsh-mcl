@@ -1,4 +1,4 @@
-# mc-launcher（0.4.1）
+# mc-launcher（0.5.0）
 
 一个**零依赖**的 Node 版 Minecraft 启动器：装原版 / Fabric、搜装模组与整合包、离线或正版启动，
 带崩溃诊断和一整套 HTTP 接口，可以直接被脚本和 AI 驱动。
@@ -7,7 +7,7 @@
 > 安装、启动、日志诊断都是可调用的步骤。
 > DSH 用户可以直接用配套插件 `@local/dsh-mc-launcher`（右下角浮窗 + 设置页）。
 
-## 特性（0.4.1）
+## 特性（0.5.0）
 
 - ✅ 从 Mojang 官方 / BMCLAPI 镜像自动下载安装**原版**任意版本（auto 选源，失败回退）
 - ✅ 自动补齐 Java 运行时（Adoptium JRE，按版本需求自动选 8 / 17 / 21，走清华镜像）
@@ -141,6 +141,14 @@ mc-launcher/
 - [ ] 发行打包（免装 Node）
 
 ## 更新日志
+
+### 0.5.0（2026-10-30）
+
+- 插件设置页「安装游戏」收尾：加载器下拉（原版 / Fabric / Forge / NeoForge），选了加载器会按 MC 版本
+  自动拉可用加载器版本（防抖 500ms），可以指定具体版本，默认用推荐版
+- 修 `/api/state` 的加载器识别：Forge / NeoForge 1.17+ 的 mainClass 都是 BootstrapLauncher，
+  改从 `--fml.neoForgeVersion` / `--fml.forgeVersion` 参数判断，实例列表不再把 Forge 显示成「原版」
+- 模组库标题的加载器标签不再写死 Fabric，跟着当前实例走
 
 ### 0.4.1（2026-10-30）
 

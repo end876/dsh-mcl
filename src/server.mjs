@@ -48,7 +48,14 @@ function cachedJava() {
 }
 
 function detectLoader(json) {
-  const main = json?.mainClass ?? '';
+  const main = String(json?.mainClass ?? '');
+  // Forge / NeoForge 1.17+ 的 mainClass 都是 BootstrapLauncher，要靠 fml 参数区分
+  const gameArgs = JSON.stringify(json?.arguments?.game ?? []);
+  if (gameArgs.includes('--fml.neoForgeVersion')) return 'NeoForge';
+  if (gameArgs.includes('--fml.forgeVersion')) return 'Forge';
+  const libs = JSON.stringify(json?.libraries ?? []);
+  if (libs.includes('net.neoforged')) return 'NeoForge';
+  if (libs.includes('net.minecraftforge')) return 'Forge';
   if (main.includes('fabric')) return 'Fabric';
   if (main.includes('quilt')) return 'Quilt';
   if (main.includes('neoforge')) return 'NeoForge';

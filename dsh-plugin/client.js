@@ -79,6 +79,10 @@ window.__ModuleLoader__.load({
       });
     }
 
+    function get(path) {
+      return api(path, { method: 'GET' });
+    }
+
     function readPref(key, fallback) {
       try {
         const value = localStorage.getItem(key);
@@ -970,6 +974,32 @@ window.__ModuleLoader__.load({
       const [notice, setNotice] = useState('');
       const [installTarget, setInstallTarget] = useState('');
       const [installLoader, setInstallLoader] = useState('vanilla');
+      const [installLoaderVersion, setInstallLoaderVersion] = useState('');
+      const [loaderVersions, setLoaderVersions] = useState([]);
+
+      // 选了加载器就顺手查一下可用版本（输入 MC 版本后防抖 500ms）
+      useEffect(() => {
+        const target = installTarget.trim();
+        if (installLoader === 'vanilla' || !target) {
+          setLoaderVersions([]);
+          setInstallLoaderVersion('');
+          return undefined;
+        }
+        let cancelled = false;
+        const timer = setTimeout(() => {
+          get(`/api/loader/list?loader=${installLoader}&mc=${encodeURIComponent(target)}`)
+            .then((data) => {
+              if (!cancelled) setLoaderVersions(Array.isArray(data.versions) ? data.versions : []);
+            })
+            .catch(() => {
+              if (!cancelled) setLoaderVersions([]);
+            });
+        }, 500);
+        return () => {
+          cancelled = true;
+          clearTimeout(timer);
+        };
+      }, [installLoader, installTarget]);
       const [modInfo, setModInfo] = useState(null);
       const [modName, setModName] = useState('');
       const [jarDeps, setJarDeps] = useState(null);
@@ -1033,7 +1063,11 @@ window.__ModuleLoader__.load({
         if (installLoader === 'vanilla') {
           act(() => post('/api/install', { version: target }));
         } else {
-          act(() => post('/api/loader/install', { loader: installLoader, mcVersion: target }));
+          act(() => post('/api/loader/install', {
+            loader: installLoader,
+            mcVersion: target,
+            ...(installLoaderVersion ? { loaderVersion: installLoaderVersion } : {}),
+          }));
         }
         setInstallTarget('');
       }
@@ -1094,7 +1128,27 @@ window.__ModuleLoader__.load({
       const auth = state?.auth ?? { loggedIn: false };
       const targetVersion = (state?.versions ?? []).find((item) => item.id === version) ?? null;
       const targetMc = targetVersion?.mc ?? null;
-      const targetLoader = String(targetVersion?.loader ?? '').toLowerCase() === 'fabric' ? 'fabric' : null;
+      const targetLoader = (() => {
+        const name = String(targetVersion?.loader ?? '').toLowerCase();
+        if (name.includes('neoforge')) return 'neoforge';
+        if (name.includes('forge')) return 'forge';
+        if (name.includes('quilt')) return 'quilt';
+        if (name.includes('fabric')) return 'fabric';
+        return null;
+      })();
+      const loaderVersionSelect = installLoader === 'vanilla'
+        ? null
+        : h(
+            'select',
+            {
+              key: 'loader-version',
+              style: { ...S.input, flex: 'none', width: 168 },
+              value: installLoaderVersion,
+              onChange: (event) => setInstallLoaderVersion(event.target.value),
+            },
+            h('option', { value: '' }, loaderVersions.length ? '加载器版本：推荐' : '加载器版本：自动'),
+            ...loaderVersions.slice(0, 30).map((item) => h('option', { key: item, value: item }, item)),
+          );
 
       return h(
         'div',
@@ -1246,6 +1300,7 @@ window.__ModuleLoader__.load({
               h('option', { value: 'forge' }, 'Forge'),
               h('option', { value: 'neoforge' }, 'NeoForge'),
             ),
+            loaderVersionSelect,
             h('input', {
               style: { ...S.input, flex: 1, minWidth: 160 },
               placeholder: '例如 1.20.1 / 1.21 / latest',
