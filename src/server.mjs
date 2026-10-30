@@ -588,8 +588,8 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         const body = await readBody(req);
         const loader = String(body.loader || 'forge').toLowerCase();
         const mc = String(body.mcVersion || '').trim();
-        if (!['fabric', 'forge', 'neoforge'].includes(loader)) {
-          sendJson(res, 400, { error: 'loader 只能是 fabric / forge / neoforge' });
+        if (!['fabric', 'quilt', 'forge', 'neoforge'].includes(loader)) {
+          sendJson(res, 400, { error: 'loader 只能是 fabric / quilt / forge / neoforge' });
           return;
         }
         if (!mc) {
@@ -600,7 +600,7 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         if (body.loaderVersion) args.push('--loader', String(body.loaderVersion));
         runJob('install', args, {
           version: `${loader} ${mc}`,
-          label: `安装 ${{ fabric: 'Fabric', forge: 'Forge', neoforge: 'NeoForge' }[loader]} → ${mc}`,
+          label: `安装 ${{ fabric: 'Fabric', quilt: 'Quilt', forge: 'Forge', neoforge: 'NeoForge' }[loader]} → ${mc}`,
         });
         sendJson(res, 200, { ok: true });
         return;

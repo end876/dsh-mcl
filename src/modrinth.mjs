@@ -149,8 +149,8 @@ export async function analyzeProjects({ projectIds, mcVersion, loader = 'fabric'
 export async function installMod(projectId, { mcVersion, loader = 'fabric', instance, sourceName = 'auto' } = {}) {
   if (!mcVersion) throw new Error('缺少目标 Minecraft 版本');
   const loaderKind = String(loader).toLowerCase();
-  if (!['fabric', 'forge', 'neoforge'].includes(loaderKind)) {
-    throw new Error(`不支持的加载器：${loader}（可用 fabric / forge / neoforge）`);
+  if (!['fabric', 'forge', 'neoforge', 'quilt'].includes(loaderKind)) {
+    throw new Error(`不支持的加载器：${loader}（可用 fabric / forge / neoforge / quilt）`);
   }
 
   const version = await pickVersion(projectId, { loader: loaderKind, mcVersion });
@@ -194,8 +194,8 @@ async function resolveTargetInstance({ instance, loaderKind, mcVersion, sourceNa
 export async function installModsBatch(projectIds, { mcVersion, loader = 'fabric', instance, sourceName = 'auto' } = {}) {
   if (!mcVersion) throw new Error('缺少目标 Minecraft 版本');
   const loaderKind = String(loader).toLowerCase();
-  if (!['fabric', 'forge', 'neoforge'].includes(loaderKind)) {
-    throw new Error(`不支持的加载器：${loader}（可用 fabric / forge / neoforge）`);
+  if (!['fabric', 'forge', 'neoforge', 'quilt'].includes(loaderKind)) {
+    throw new Error(`不支持的加载器：${loader}（可用 fabric / forge / neoforge / quilt）`);
   }
 
   const instanceId = await resolveTargetInstance({ instance, loaderKind, mcVersion, sourceName });
@@ -272,12 +272,15 @@ export async function installModpack(projectId, { mcVersion, sourceName = 'auto'
   const packMc = mcVersion ?? deps.minecraft;
   if (!packMc) throw new Error('整合包没有声明 Minecraft 版本');
 
-  // 按 dependencies 分派加载器：fabric-loader / forge / neoforge
+  // 按 dependencies 分派加载器：fabric-loader / quilt-loader / forge / neoforge
   let loaderKind = 'fabric';
   let loaderVersion;
   if (deps['fabric-loader']) {
     loaderKind = 'fabric';
     loaderVersion = deps['fabric-loader'];
+  } else if (deps['quilt-loader']) {
+    loaderKind = 'quilt';
+    loaderVersion = deps['quilt-loader'];
   } else if (deps.neoforge) {
     loaderKind = 'neoforge';
     loaderVersion = deps.neoforge;
@@ -285,8 +288,7 @@ export async function installModpack(projectId, { mcVersion, sourceName = 'auto'
     loaderKind = 'forge';
     loaderVersion = deps.forge;
   } else {
-    const loaderText = deps['quilt-loader'] ? 'Quilt' : '其他加载器';
-    throw new Error(`这个整合包需要 ${loaderText}，目前支持 Fabric / Forge / NeoForge`);
+    throw new Error('这个整合包需要不支持的加载器（目前支持 Fabric / Quilt / Forge / NeoForge）');
   }
 
   step(`准备整合包实例（${packMc} / ${loaderKind} / ${projectId}）`);

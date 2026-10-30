@@ -210,6 +210,7 @@ function cmdHelp() {
   say('    mcl fabric <mc版本>         安装 Fabric 实例');
   say('    mcl forge <mc版本>          安装 Forge 实例（--loader 指定版本 / --list-loaders 看列表）');
   say('    mcl neoforge <mc版本>       安装 NeoForge 实例');
+  say('    mcl quilt <mc版本>          安装 Quilt 实例');
   say('    mcl mod <项目ID> --mc 1.20.1  安装一个 Modrinth 模组');
   say('    mcl mods <项目ID...> --mc 1.20.1  批量安装模组（自动补前置、并发下载）');
   say('    mcl pack <项目ID> --mc 1.20.1 安装一个 Modrinth 整合包');
@@ -251,7 +252,7 @@ async function cmdFabric(positional, flags) {
 
 async function cmdLoader(positional, flags, loader) {
   const mc = positional[1];
-  const label = loader === 'forge' ? 'Forge' : 'NeoForge';
+  const label = loader === 'forge' ? 'Forge' : loader === 'quilt' ? 'Quilt' : 'NeoForge';
   if (!mc) throw new Error(`用法：mcl ${loader} <mc版本> [--loader 版本]`);
   if (flags['list-loaders']) {
     const list = await listLoaderVersions(loader, mc);
@@ -402,6 +403,9 @@ async function main() {
       break;
     case 'neoforge':
       await cmdLoader(positional, flags, 'neoforge');
+      break;
+    case 'quilt':
+      await cmdLoader(positional, flags, 'quilt');
       break;
     case 'mod':
       await cmdMod(positional, flags);

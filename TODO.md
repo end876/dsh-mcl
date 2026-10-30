@@ -64,6 +64,14 @@
 - [x] 搜索结果加 `categoriesZh`（中文分类，顺带过滤 loader 名噪音）
 - [x] CLI 帮助补上 `mcl mods`（批量装模组）
 
+### 0.6.0（2026-10-30）
+
+- [x] **Quilt 支持**：`src/quilt.mjs`（maven 元数据挑稳定版 → 并发探测 profile json → 下载依赖）
+      - 列表走 maven 元数据 + profile 探测，避开官方 ~900KB 的 per-MC 列表；结果缓存 3 天
+      - 实例 `quilt-loader-<ver>-<mc>`；CLI `mcl quilt`；`/api/loader/list|install` 支持 quilt
+      - 模组/整合包：`--loader quilt`、mrpack `deps["quilt-loader"]`、插件下拉与模组库
+      - 注意：`maven.quiltmc.org` 没有国内镜像，首次安装可能很慢（文件走直连）
+
 ### 0.5.2（2026-10-30）
 
 外部评测（v0.4.0 代码审查报告）修复项：
@@ -81,7 +89,6 @@
 
 剩余（未做）：
 
-- [ ] **Quilt 支持**（评测里唯一没做的加载器）
 - [ ] 凭据仍是 `~/.mcl/auth.json` 明文（0600）；要不要加密/系统凭据库另议
 - [ ] 评测里的低危项：版本目录解析收口、安装状态可恢复、长任务取消等（见 P1/P2）
 

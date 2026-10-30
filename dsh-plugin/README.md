@@ -210,7 +210,7 @@ POST /api/client/mount?...   // 浮窗挂载信标，写入 tmp/client-mounts.lo
 
 - 只绑定 `127.0.0.1`；CORS 只放行 `http://127.0.0.1:*`、`http://localhost:*`、`dsh-app://app`，其他来源 403
 - 端口默认 51730，被占用会自动往后找（51730~51749），实际端口写在 `~/.mcl/server.json`
-- 离线与微软正版都支持；Fabric 实例；Forge / NeoForge 未实现
+- 离线与微软正版都支持；Fabric / Quilt / Forge / NeoForge 实例都支持
 - 长任务（安装 / 导入 / 下载）异步执行，进度看 SSE
 - 顺序提示：浮窗里点「打开独立窗口」会收起浮窗，想回来去设置页点「显示浮窗」
 

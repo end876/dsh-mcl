@@ -1,6 +1,6 @@
-# mc-launcher（0.5.1）
+# mc-launcher（0.6.0）
 
-一个**零依赖**的 Node 版 Minecraft 启动器：装原版 / Fabric / Forge / NeoForge、搜装模组与整合包、  
+一个**零依赖**的 Node 版 Minecraft 启动器：装原版 / Fabric / Quilt / Forge / NeoForge、搜装模组与整合包、  
 离线或正版启动，带崩溃诊断和一整套 HTTP 接口，可以直接被脚本和 AI 驱动。
 
 > **背景**：它最初是为了给 DSH（DeepSeek Harness）做一个「在对话里启动 Minecraft」的插件而写的启动器核心。
@@ -9,21 +9,22 @@
 > 所以 **CLI 和 HTTP 接口是它的主界面**：DSH 插件（右下角浮窗 + 设置页）是它最常用的客户端，
 > 浏览器界面只是顺手给的。
 >
-> **用途**：管原版 / Fabric / Forge / NeoForge 实例、搜装 Modrinth 模组与整合包、
+> **用途**：管原版 / Fabric / Quilt / Forge / NeoForge 实例、搜装 Modrinth 模组与整合包、
 > 离线或正版启动、崩溃时给结论 —— 脚本能调，AI 也能调，人当然也能用。
 
 > **项目状态**：早期版本，正在做验证测试；接口和版本号都可能变，装之前先看清楚。
 
-## 特性（0.5.1）
+## 特性（0.6.0）
 
 - ✅ 从 Mojang 官方 / BMCLAPI 镜像自动下载安装**原版**任意版本（auto 选源，失败回退）
 - ✅ 自动补齐 Java 运行时（Adoptium JRE，按版本需求自动选 8 / 17 / 21，走清华镜像）
 - ✅ 离线登录（标准 `OfflinePlayer:<name>` UUID，兼容存档）+ **微软设备码登录**
 - ✅ 版本隔离目录（和主流启动器一致：`versions/<版本名>/` 作为独立游戏目录）
 - ✅ 下载 SHA1 校验、断点跳过、失败重试、并发下载（并发 5）
-- ✅ **Fabric** 实例安装（按配置隔离 `fabric-<mc>-<label>`）
+- ✅ **Fabric / Quilt** 实例安装（按配置隔离 `fabric-<mc>-<label>`；Quilt 走官方 meta 的 profile json）
 - ✅ **Forge / NeoForge** 实例安装：从 installer 里取 `install_profile.json`，自己跑 processors  
   （binpatch / jarsplitter / AutoRenamingTool），不调用官方 installer 本体；依赖走 BMCLAPI maven 镜像
+- ✅ **Quilt** 实例安装：maven 元数据挑稳定版 + profile json，`quilt-loader-<ver>-<mc>` 实例直连可启动
 - ✅ **Modrinth** 搜索 / 分类 / 排序、冲突检测、前置依赖、批量安装
 - ✅ `.mrpack` 安装、**解压即玩**包导入（合并 + 覆盖前备份）
 - ✅ 光影下载（自动检查 Iris）
@@ -33,7 +34,6 @@
 - ✅ **动态端口**：51730 被占用自动往后找，实际端口写 `~/.mcl/server.json`，客户端自动发现
 - ✅ SSE 事件流（安装/启动进度、登录结果），带跨源 CORS
 - ✅ **模组库（DSH 插件里）**：Modrinth 搜索、冲突预检、批量安装、前置递归补齐、本地 jar 前置识别
-- ⬜ Quilt
 
 ## 快速开始
 
@@ -43,6 +43,7 @@
 node bin/mcl.mjs doctor                    # 环境与下载源自检
 node bin/mcl.mjs install 1.20.1            # 下载安装原版 1.20.1（约 700MB 资源）
 node bin/mcl.mjs fabric 1.20.1             # 装一个 Fabric 实例
+node bin/mcl.mjs quilt 1.20.1              # 装一个 Quilt 实例（官方 meta 较慢，第一次可能要几分钟）
 node bin/mcl.mjs launch 1.20.1 --user 你的名字 --memory 4G
 ```
 
@@ -81,6 +82,7 @@ mcl gui                 # 或直接 mcl
 | `mcl fabric <mc版本>`            | 安装 Fabric 实例                                              |
 | `mcl forge <mc版本>`             | 安装 Forge 实例；`--loader 47.2.0` 指定版本，`--list-loaders` 看可用版本 |
 | `mcl neoforge <mc版本>`          | 安装 NeoForge 实例（同上参数）                                      |
+| `mcl quilt <mc版本>`             | 安装 Quilt 实例（`--loader 0.30.1` 指定版本，`--list-loaders` 看列表）   |
 | `mcl mod <项目ID> --mc 1.20.1`   | 装一个 Modrinth 模组（含前置依赖）                                    |
 | `mcl pack <项目ID> --mc 1.20.1`  | 装一个 Modrinth 整合包                                          |
 | `mcl import "<zip路径>"`         | 导入解压即玩包（合并 + 备份）                                          |
@@ -180,6 +182,19 @@ mc-launcher/
 - [ ] 发行打包（免装 Node）
 
 ## 更新日志
+
+### 0.6.0（2026-10-30）
+
+- **新增 Quilt 支持**：`src/quilt.mjs` 走 Quilt 官方 meta 的 profile json（和 Fabric 一条思路，没有 installer/processors）
+  - 加载器列表：不拉官方那份 ~900KB 的 `versions/loader/<mc>`，改用 maven 元数据里的稳定版候选 + 并发探测 profile（每个 ~1.5KB），结果缓存 3 天
+  - 依赖下载：`maven.fabricmc.net` 的库走 BMCLAPI 镜像，`maven.quiltmc.org` 只能直连（BMCLAPI 没有镜像，国内会慢）
+  - 实例名沿用 Quilt 官方 id：`quilt-loader-<版本>-<mc>`；主类 `org.quiltmc.loader.impl.launch.knot.KnotClient`
+- CLI：`mcl quilt <mc>`（`--loader` 指定版本、`--list-loaders` 看可用版本）
+- HTTP：`/api/loader/list|install` 支持 `quilt`；`/api/state` 的实例列表显示 Quilt
+- 模组：`mcl mod/mods --loader quilt`、插件模组库选 Quilt 实例直接装；mrpack 按 `deps["quilt-loader"]` 分派
+- 插件：安装游戏的加载器下拉加 Quilt
+- 下载器支持**断点续传**（HTTP Range）：慢网络下 watchdog 掐断连接后从 .part 继续，不再从头下（对这次 Quilt 的慢源尤其关键）
+- 下载层从 `fetch` 换成 `node:https`：Node 内置 fetch 的连接超时写死 10 秒，慢网络下 Cloudflare/镜像握手超过 10 秒就直接失败；现在连接超时 120s、空闲超时 90s，重定向自己跟
 
 ### 0.5.2（2026-10-30）
 

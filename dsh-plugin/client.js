@@ -1314,6 +1314,7 @@ window.__ModuleLoader__.load({
               },
               h('option', { value: 'vanilla' }, '原版'),
               h('option', { value: 'fabric' }, 'Fabric'),
+              h('option', { value: 'quilt' }, 'Quilt'),
               h('option', { value: 'forge' }, 'Forge'),
               h('option', { value: 'neoforge' }, 'NeoForge'),
             ),

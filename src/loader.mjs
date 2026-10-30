@@ -2,12 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
-import { download, fetchJson, runPool } from './http.mjs';
+import { download, fetchBuffer, fetchJson, runPool } from './http.mjs';
 import { installVersion, installedVersions } from './install.mjs';
 import { mavenPath } from './meta.mjs';
 import { GAME_DIR, LIBRARIES_DIR, ensureDir, exists, versionDir } from './paths.mjs';
 import { openZip, openZipBuffer } from './zip.mjs';
 import { ensureJava } from './java.mjs';
+import { installQuilt, listQuiltLoaders } from './quilt.mjs';
 import { Progress, info, ok, step, warn } from './log.mjs';
 
 const FORGE_MAVEN = 'https://maven.minecraftforge.net/';
@@ -32,11 +33,12 @@ export function mirrorMavenUrl(url) {
 export const LOADERS = {
   forge: { id: 'forge', label: 'Forge', maven: FORGE_MAVEN },
   neoforge: { id: 'neoforge', label: 'NeoForge', maven: NEOFORGE_MAVEN },
+  quilt: { id: 'quilt', label: 'Quilt', maven: 'https://maven.quiltmc.org/repository/release/' },
 };
 
 function asLoader(loader) {
   const key = String(loader ?? '').toLowerCase();
-  if (!LOADERS[key]) throw new Error(`未知加载器：${loader}（可选 forge / neoforge）`);
+  if (!LOADERS[key]) throw new Error(`未知加载器：${loader}（可选 forge / neoforge / quilt）`);
   return LOADERS[key];
 }
 
@@ -66,9 +68,9 @@ export async function listNeoForgeVersions(mcVersion) {
   const prefix = `${Number(parts[1])}.${Number(parts[2] ?? 0)}.`;
   let xml;
   try {
-    xml = await (await fetch(NEOFORGE_METADATA, { headers: { 'user-agent': 'mc-launcher' } })).text();
+    xml = (await fetchBuffer(NEOFORGE_METADATA, { timeout: 60_000 })).toString('utf8');
   } catch {
-    xml = await (await fetch(NEOFORGE_METADATA_OFFICIAL, { headers: { 'user-agent': 'mc-launcher' } })).text();
+    xml = (await fetchBuffer(NEOFORGE_METADATA_OFFICIAL, { timeout: 60_000 })).toString('utf8');
   }
   const versions = [...String(xml).matchAll(/<version>([^<]+)<\/version>/g)].map((m) => m[1]);
   return versions.filter((v) => v.startsWith(prefix)).reverse();
@@ -76,6 +78,7 @@ export async function listNeoForgeVersions(mcVersion) {
 
 export async function listLoaderVersions(loader, mcVersion) {
   const meta = asLoader(loader);
+  if (meta.id === 'quilt') return listQuiltLoaders(mcVersion);
   if (meta.id === 'forge') return listForgeVersions(mcVersion);
   return listNeoForgeVersions(mcVersion);
 }
@@ -228,6 +231,10 @@ export async function installLoader(loader, mcVersion, {
   javaMajor,
 } = {}) {
   const meta = asLoader(loader);
+  // Quilt 没有 installer/processors：走它自己的 profile json（和 Fabric 类似）
+  if (meta.id === 'quilt') {
+    return installQuilt(mcVersion, { loaderVersion, sourceName, instanceId });
+  }
   if (!installedVersions().includes(mcVersion)) {
     step(`先安装原版 ${mcVersion}`);
     await installVersion(mcVersion, { sourceName });
@@ -374,6 +381,7 @@ export async function ensureLoaderInstance(loader, mcVersion, options = {}) {
     try {
       const json = JSON.parse(fs.readFileSync(path.join(versionDir(id), `${id}.json`), 'utf8'));
       if (json.inheritsFrom !== mcVersion) continue;
+      if (meta.id === 'quilt' && detectLoader(json) === 'quilt') return id;
       const main = String(json.mainClass ?? '');
       if (meta.id === 'forge' && /bootstraplauncher|fml/i.test(main) && !/neoforge/i.test(main)) return id;
       if (meta.id === 'neoforge' && /neoforge|bootstraplauncher/i.test(main)) return id;
