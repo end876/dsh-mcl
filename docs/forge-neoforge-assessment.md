@@ -1,4 +1,4 @@
-# Forge / NeoForge 支持评估（0.5.0 前置调研）
+# Forge / NeoForge 支持评估（0.4.1 前置调研）
 
 结论先说：**能做，但不能照抄 Fabric 那条路。**
 
@@ -84,7 +84,7 @@ Forge 1.20.1-47.2.0 的 installer 内部：`install_profile.json`（46 个 libra
 
 未实测：NeoForge 全流程（源码同一条链路，但 neoforged 官方源不可达，只验证了版本列表 260 条经 BMCLAPI 可读）；
 mrpack 的 Forge 分派（逻辑已接，缺一次真包验证）。
-## 复测补充（0.5.0 收尾）
+## 复测补充（0.4.1 收尾）
 
 - NeoForge 21.1.265 实测通过：Java 21 自动就位，ModLauncher 11 + Mixin 0.8.7 + NeoForge mod loading 正常，
   OpenAL / Sound engine 起来（能进游戏）
