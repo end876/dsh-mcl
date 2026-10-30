@@ -84,7 +84,17 @@ export function buildCommand(versionId, options = {}) {
   ensureDir(gameDir);
 
   const libraries = filterLibraries(resolved.libraries);
-  const classpathEntries = libraries.map((lib) => path.join(LIBRARIES_DIR, libraryRelPath(lib)));
+  // 继承链会把父版本和子版本都列的库重复拼进来（例如 Forge/NeoForge 与 1.21.1
+  // 都写 gson 2.10.1）。同一个 jar 在 classpath 出现两次会让 BootstrapLauncher 2.x
+  // 的 UnionFileSystem 抛 "Duplicate key"。
+  const seenLib = new Set();
+  const classpathEntries = [];
+  for (const lib of libraries) {
+    const rel = libraryRelPath(lib);
+    if (seenLib.has(rel)) continue;
+    seenLib.add(rel);
+    classpathEntries.push(path.join(LIBRARIES_DIR, rel));
+  }
   const jarId = resolved.jar ?? rootId;
   const clientJar = path.join(versionDir(jarId), `${jarId}.jar`);
   // Forge / NeoForge 1.17+ 走 BootstrapLauncher：补丁后的 client jar 由它扫描

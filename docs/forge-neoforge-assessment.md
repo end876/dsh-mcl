@@ -84,3 +84,12 @@ Forge 1.20.1-47.2.0 的 installer 内部：`install_profile.json`（46 个 libra
 
 未实测：NeoForge 全流程（源码同一条链路，但 neoforged 官方源不可达，只验证了版本列表 260 条经 BMCLAPI 可读）；
 mrpack 的 Forge 分派（逻辑已接，缺一次真包验证）。
+## 复测补充（0.5.0 收尾）
+
+- NeoForge 21.1.265 实测通过：Java 21 自动就位，ModLauncher 11 + Mixin 0.8.7 + NeoForge mod loading 正常，
+  OpenAL / Sound engine 起来（能进游戏）
+- 修了两处 classpath 问题：
+  1. BootstrapLauncher 实例不再把原版 client jar 放进 classpath；
+  2. 继承链里父/子都声明的库（例：gson 2.10.1）要去重，否则 NeoForge 的 UnionFileSystem 报 Duplicate key
+- mrpack 实测：Forge 1.20.1 的「Optimized fps」装出 `forge-1.20.1-optimized-fp`，22 个模组 + 61 个覆盖文件，
+  启动后 mixin 正常加载

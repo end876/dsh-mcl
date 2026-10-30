@@ -1,4 +1,4 @@
-# mc-launcher（0.4.0）
+# mc-launcher（0.5.0）
 
 一个**零依赖**的 Node 版 Minecraft 启动器：装原版 / Fabric、搜装模组与整合包、离线或正版启动，
 带崩溃诊断和一整套 HTTP 接口，可以直接被脚本和 AI 驱动。
@@ -141,6 +141,18 @@ mc-launcher/
 - [ ] 发行打包（免装 Node）
 
 ## 更新日志
+
+### 0.5.0（2026-10-30）
+
+- **Forge / NeoForge 支持**：读 installer 里的 `install_profile.json` 自己跑 processors
+  （binpatch / jarsplitter / AutoRenamingTool），依赖与 installer 都走 BMCLAPI maven 镜像
+- 修 BootstrapLauncher 实例的 classpath：不再塞原版 client jar；继承链里重复的库（如 gson）去重，
+  否则 NeoForge 的 UnionFileSystem 会抛 `Duplicate key`
+- mrpack 整合包按 `deps.fabric-loader / forge / neoforge` 分派，不再拒绝 Forge 包
+- `mcl mod` / `mcl mods` 支持 `--loader forge|neoforge`，会复用同版本的加载器实例
+- 新增 `/api/loader/list`、`/api/loader/install`；插件设置页的安装卡片加了加载器下拉
+- 实测：Forge 1.20.1（进游戏）、NeoForge 21.1.1（进游戏）、Forge mrpack「Optimized fps」（22 个模组加载）
+- processor 输出默认静默，只在失败时回显最后 15 行
 
 ### 0.4.0（2026-10-30）
 

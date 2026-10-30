@@ -714,7 +714,7 @@ window.__ModuleLoader__.load({
             setBusy(false);
             return;
           }
-          await post('/api/mods/install-batch', { projectIds: ids, mcVersion: mc });
+          await post('/api/mods/install-batch', { projectIds: ids, mcVersion: mc, loader: loader ?? 'fabric' });
           setConfirming(false);
           setPicked(new Set());
           onNotice?.(`已开始安装 ${ids.length} 个模组，进度看上面的进度条`);
@@ -804,7 +804,7 @@ window.__ModuleLoader__.load({
           h(
             'span',
             { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)', alignSelf: 'center' } },
-            mc ? `目标 Minecraft ${mc}${tab === 'mod' && loader ? ' · Fabric' : ''}` : '识别不到 MC 版本',
+            mc ? `目标 Minecraft ${mc}${tab === 'mod' && loader ? ' · ' + (loader === 'neoforge' ? 'NeoForge' : loader === 'forge' ? 'Forge' : loader === 'quilt' ? 'Quilt' : 'Fabric') : ''}` : '识别不到 MC 版本',
           ),
         ),
         h(
@@ -969,6 +969,7 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false);
       const [notice, setNotice] = useState('');
       const [installTarget, setInstallTarget] = useState('');
+      const [installLoader, setInstallLoader] = useState('vanilla');
       const [modInfo, setModInfo] = useState(null);
       const [modName, setModName] = useState('');
       const [jarDeps, setJarDeps] = useState(null);
@@ -1029,7 +1030,11 @@ window.__ModuleLoader__.load({
       function install() {
         const target = installTarget.trim();
         if (!target) return;
-        act(() => post('/api/install', { version: target }));
+        if (installLoader === 'vanilla') {
+          act(() => post('/api/install', { version: target }));
+        } else {
+          act(() => post('/api/loader/install', { loader: installLoader, mcVersion: target }));
+        }
         setInstallTarget('');
       }
 
@@ -1073,7 +1078,7 @@ window.__ModuleLoader__.load({
         const ids = (jarDeps?.found ?? []).map((item) => item.projectId).filter(Boolean);
         if (ids.length === 0 || !targetMc) return;
         try {
-          await post('/api/mods/install-batch', { projectIds: ids, mcVersion: targetMc });
+          await post('/api/mods/install-batch', { projectIds: ids, mcVersion: targetMc, loader: loader ?? 'fabric' });
           setNotice(`已开始安装 ${ids.length} 个前置，进度看上面的进度条`);
         } catch (err) {
           setNotice(err.message);
@@ -1225,10 +1230,22 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { style: S.card },
-          h('div', { style: S.label }, '安装原版'),
+          h('div', { style: S.label }, '安装游戏'),
           h(
             'div',
             { style: S.row },
+            h(
+              'select',
+              {
+                style: { ...S.input, flex: 'none', width: 110 },
+                value: installLoader,
+                onChange: (event) => setInstallLoader(event.target.value),
+              },
+              h('option', { value: 'vanilla' }, '原版'),
+              h('option', { value: 'fabric' }, 'Fabric'),
+              h('option', { value: 'forge' }, 'Forge'),
+              h('option', { value: 'neoforge' }, 'NeoForge'),
+            ),
             h('input', {
               style: { ...S.input, flex: 1, minWidth: 160 },
               placeholder: '例如 1.20.1 / 1.21 / latest',

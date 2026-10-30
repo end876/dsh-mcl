@@ -183,17 +183,17 @@ function substituteArg(value, vars) {
   return out;
 }
 
-function runJava(javaExe, args, { cwd, label }) {
+function runJava(javaExe, args, { cwd, label, quiet = false }) {
   return new Promise((resolve, reject) => {
     const child = spawn(javaExe, args, { cwd, windowsHide: true });
     let output = '';
     child.stdout.on('data', (chunk) => {
       output += chunk.toString();
-      process.stdout.write(chunk);
+      if (!quiet) process.stdout.write(chunk);
     });
     child.stderr.on('data', (chunk) => {
       output += chunk.toString();
-      process.stderr.write(chunk);
+      if (!quiet) process.stderr.write(chunk);
     });
     child.on('error', reject);
     child.on('close', (code) => {
@@ -201,6 +201,18 @@ function runJava(javaExe, args, { cwd, label }) {
       else reject(new Error(`${label} 失败（exit ${code}）\n${output.split('\n').slice(-15).join('\n')}`));
     });
   });
+}
+
+/** MC 版本 → 需要的 Java 主版本（1.20.5+ 是 21，1.17+ 是 17，再老是 8） */
+export function javaMajorFor(mcVersion) {
+  const parts = String(mcVersion).split('.').map((n) => Number(n));
+  const major = parts[0] ?? 1;
+  const minor = parts[1] ?? 0;
+  const patch = parts[2] ?? 0;
+  if (major > 1 || minor >= 21) return 21;
+  if (minor > 20 || (minor === 20 && patch >= 5)) return 21;
+  if (minor >= 17) return 17;
+  return 8;
 }
 
 /**
@@ -273,7 +285,7 @@ export async function installLoader(loader, mcVersion, {
   };
 
   // 3) processors
-  const java = await ensureJava(javaMajor ?? 17);
+  const java = await ensureJava(javaMajor ?? javaMajorFor(mcVersion));
   const processors = (profile.processors ?? []).filter((p) => processorSides(p).includes('client'));
   step(`${meta.label} processors（${processors.length} 个）`);
   let index = 0;
@@ -288,6 +300,7 @@ export async function installLoader(loader, mcVersion, {
     await runJava(java.exe, ['-cp', classpath.join(path.delimiter), mainClass, ...args], {
       cwd: workDir,
       label: `processor ${index}`,
+      quiet: true,
     });
   }
 

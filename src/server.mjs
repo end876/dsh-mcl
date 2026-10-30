@@ -561,19 +561,19 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         const body = await readBody(req);
         const loader = String(body.loader || 'forge').toLowerCase();
         const mc = String(body.mcVersion || '').trim();
-        if (!['forge', 'neoforge'].includes(loader)) {
-          sendJson(res, 400, { error: 'loader 只能是 forge / neoforge' });
+        if (!['fabric', 'forge', 'neoforge'].includes(loader)) {
+          sendJson(res, 400, { error: 'loader 只能是 fabric / forge / neoforge' });
           return;
         }
         if (!mc) {
           sendJson(res, 400, { error: '缺少 Minecraft 版本' });
           return;
         }
-        const args = [loader, mc];
+        const args = [loader === 'fabric' ? 'fabric' : loader, mc];
         if (body.loaderVersion) args.push('--loader', String(body.loaderVersion));
         runJob('install', args, {
           version: `${loader} ${mc}`,
-          label: `安装 ${loader === 'forge' ? 'Forge' : 'NeoForge'} → ${mc}`,
+          label: `安装 ${{ fabric: 'Fabric', forge: 'Forge', neoforge: 'NeoForge' }[loader]} → ${mc}`,
         });
         sendJson(res, 200, { ok: true });
         return;
