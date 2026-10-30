@@ -1,4 +1,4 @@
-# mc-launcher（0.5.0）
+# mc-launcher（0.5.1）
 
 一个**零依赖**的 Node 版 Minecraft 启动器：装原版 / Fabric / Forge / NeoForge、搜装模组与整合包、  
 离线或正版启动，带崩溃诊断和一整套 HTTP 接口，可以直接被脚本和 AI 驱动。
@@ -14,7 +14,7 @@
 
 > **项目状态**：早期版本，正在做验证测试；接口和版本号都可能变，装之前先看清楚。
 
-## 特性（0.5.0）
+## 特性（0.5.1）
 
 - ✅ 从 Mojang 官方 / BMCLAPI 镜像自动下载安装**原版**任意版本（auto 选源，失败回退）
 - ✅ 自动补齐 Java 运行时（Adoptium JRE，按版本需求自动选 8 / 17 / 21，走清华镜像）
@@ -137,8 +137,7 @@ mc-launcher/
 - 本项目**不包含**任何 Minecraft 游戏文件，也不提供账号或令牌分发；下载由使用者发起，资源来自  
   Mojang 官方与 BMCLAPI 的公开接口，**是否允许在当前地区/场景使用，请自行判断并遵守当地法律法规**。
 - 离线与微软正版登录都支持；请支持正版：<https://www.minecraft.net/>。
-- 本项目为 MIT，不打包也不执行任何第三方项目的代码或二进制。
-- 本项目为 MIT，不打包也不执行任何第三方项目的代码或二进制；如果你在别处看到类似实现，  
+- 本项目为 MIT，不打包也不执行任何第三方项目的代码或二进制；如果你在别处看到类似实现，
   建议先确认它的许可与来源是否写清楚。
 
 ## 路线图
@@ -165,6 +164,9 @@ mc-launcher/
 - 修启动器版本号残留 0.4.0（`--dry-run` 里可见），改为 0.5.1
 - 修 `loaderOfVersion()` 把 NeoForge 判成 Forge（两者 mainClass 都是 BootstrapLauncher）
 - CLI：`mcl mod` / `mcl mods` 新增 `--instance <实例>`，可指定装进哪个实例
+- 加载器判定统一到 `src/loader.mjs`（CLI / HTTP / 插件共用）：看 `--fml.neoForgeVersion`、`--fml.forgeVersion`
+  参数和库名，`mcl list` 也会显示 Forge / NeoForge 标签了
+- 验证：全新 clone 直接能跑；原版与 Fabric 启动无回归；`mcl mod --loader forge` 正确装到 Forge 实例
 
 ### 0.5.0（2026-10-30）
 

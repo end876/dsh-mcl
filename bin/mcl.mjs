@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 import os from 'node:os';
 import path from 'node:path';
-import { GAME_DIR, LIBRARIES_DIR, ASSETS_DIR, IS_WINDOWS, OS_NAME } from '../src/paths.mjs';
-import { pickSource } from '../src/source.mjs';
+import { GAME_DIR, LIBRARIES_DIR, ASSETS_DIR, IS_WINDOWS, OS_NAME, exists, versionDir } from '../src/paths.mjs';
+import { pickSource, createSource } from '../src/source.mjs';
 import { installedVersions, installVersion, readLocalVersionJson } from '../src/install.mjs';
 import { buildCommand, launch, printCommand } from '../src/launch.mjs';
 import { listJava, findJava } from '../src/java.mjs';
 import { startGui } from '../src/server.mjs';
 import { installFabric } from '../src/fabric.mjs';
-import { installLoader, listLoaderVersions } from '../src/loader.mjs';
+import { installLoader, listLoaderVersions, detectLoader as detectLoaderId, loaderLabelFor } from '../src/loader.mjs';
 import { installMod, installModpack, installModsBatch } from '../src/modrinth.mjs';
 import { scanAll, scanInstance } from '../src/dupes.mjs';
 import { importArchive } from '../src/import.mjs';
@@ -94,12 +94,7 @@ async function cmdList(positional, flags) {
 }
 
 function detectLoader(json) {
-  const main = json?.mainClass ?? '';
-  if (main.includes('fabric')) return 'Fabric';
-  if (main.includes('quilt')) return 'Quilt';
-  if (main.includes('forge')) return 'Forge';
-  if (main.includes('neoforge')) return 'NeoForge';
-  return '';
+  return loaderLabelFor(detectLoaderId(json));
 }
 
 async function cmdLaunch(positional, flags) {
@@ -154,14 +149,28 @@ async function cmdInfo(positional) {
   }
   const json = readLocalVersionJson(id);
   const command = buildCommand(id, {});
+  // Java 版本和客户端 jar 都要沿继承链找：Forge / NeoForge / Fabric 的 json 自己往往不写
+  let javaMajor = 8;
+  let rootId = id;
+  let cursor = json;
+  for (let guard = 0; cursor && guard < 10; guard += 1) {
+    if (cursor.javaVersion?.majorVersion) {
+      javaMajor = cursor.javaVersion.majorVersion;
+      break;
+    }
+    if (!cursor.inheritsFrom) break;
+    rootId = cursor.inheritsFrom;
+    cursor = readLocalVersionJson(cursor.inheritsFrom);
+  }
+  const clientJar = path.join(versionDir(rootId), `${rootId}.jar`);
   say();
   say(`  ${c.bold(json.id)}  ${json.type}`);
   info(`主类：${json.mainClass}`);
   info(`继承：${json.inheritsFrom ?? '(无)'}`);
-  info(`要求 Java：${json.javaVersion?.majorVersion ?? 8}`);
-  info(`资源索引：${json.assets ?? '?'}`);
-  info(`库文件：${json.libraries?.length ?? 0} 个（当前平台生效 ${command.classpath.length - 1} 个）`);
-  info(`客户端 jar：${command.classpath.at(-1)}`);
+  info(`要求 Java：${javaMajor}`);
+  info(`资源索引：${json.assets ?? command.resolved?.assets ?? '?'}`);
+  info(`库文件：${json.libraries?.length ?? 0} 个（当前平台生效 ${command.classpath.length} 个）`);
+  info(`客户端 jar：${exists(clientJar) ? clientJar : `${clientJar}（缺失）`}`);
   info(`游戏目录：${command.gameDir}`);
   say();
 }

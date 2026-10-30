@@ -13,7 +13,7 @@ import { pickSource } from './source.mjs';
 import { inspectArchive, inferMcFromNames } from './mods.mjs';
 import { diagnoseSummary } from './diagnose.mjs';
 import { loadAuth, loginWithDeviceCode } from './auth.mjs';
-import { listLoaderVersions } from './loader.mjs';
+import { listLoaderVersions, detectLoader as detectLoaderId, loaderLabelFor } from './loader.mjs';
 
 const MSA_CLIENT_ID = 'c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb';
 import { searchProjects, analyzeProjects, installModsBatch, getProjectDetail, installShader, resolveModIds } from './modrinth.mjs';
@@ -48,19 +48,7 @@ function cachedJava() {
 }
 
 function detectLoader(json) {
-  const main = String(json?.mainClass ?? '');
-  // Forge / NeoForge 1.17+ 的 mainClass 都是 BootstrapLauncher，要靠 fml 参数区分
-  const gameArgs = JSON.stringify(json?.arguments?.game ?? []);
-  if (gameArgs.includes('--fml.neoForgeVersion')) return 'NeoForge';
-  if (gameArgs.includes('--fml.forgeVersion')) return 'Forge';
-  const libs = JSON.stringify(json?.libraries ?? []);
-  if (libs.includes('net.neoforged')) return 'NeoForge';
-  if (libs.includes('net.minecraftforge')) return 'Forge';
-  if (main.includes('fabric')) return 'Fabric';
-  if (main.includes('quilt')) return 'Quilt';
-  if (main.includes('neoforge')) return 'NeoForge';
-  if (main.includes('forge')) return 'Forge';
-  return '原版';
+  return loaderLabelFor(detectLoaderId(json));
 }
 
 /** 需要的 Java 版本要看继承链（Fabric 的 json 往往不写 javaVersion） */

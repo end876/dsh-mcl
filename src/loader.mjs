@@ -321,16 +321,34 @@ export async function installLoader(loader, mcVersion, {
 export const installForge = (mcVersion, options = {}) => installLoader('forge', mcVersion, options);
 export const installNeoForge = (mcVersion, options = {}) => installLoader('neoforge', mcVersion, options);
 
-/** 已安装实例里挑一个指定加载器的（给插件/命令行用） */
+/** 版本 json → 加载器 id（1.17+ 的 Forge / NeoForge 都是 BootstrapLauncher，靠 fml 参数区分） */
+export function detectLoader(json) {
+  const main = String(json?.mainClass ?? '');
+  const gameArgs = JSON.stringify(json?.arguments?.game ?? []);
+  if (gameArgs.includes('--fml.neoForgeVersion')) return 'neoforge';
+  if (gameArgs.includes('--fml.forgeVersion')) return 'forge';
+  const libs = JSON.stringify(json?.libraries ?? []);
+  if (libs.includes('net.neoforged')) return 'neoforge';
+  if (libs.includes('net.minecraftforge')) return 'forge';
+  if (main.includes('fabric')) return 'fabric';
+  if (main.includes('quilt')) return 'quilt';
+  if (main.includes('neoforge')) return 'neoforge';
+  if (main.includes('forge')) return 'forge';
+  return 'vanilla';
+}
+
+const LOADER_LABELS = { vanilla: '原版', fabric: 'Fabric', quilt: 'Quilt', forge: 'Forge', neoforge: 'NeoForge' };
+
+/** 加载器 id → 展示名（原版 / Fabric / Forge / NeoForge / Quilt） */
+export function loaderLabelFor(id) {
+  return LOADER_LABELS[String(id ?? '').toLowerCase()] ?? '';
+}
+
+/** 已安装实例 → 加载器 id */
 export function loaderOfVersion(id) {
   try {
     const json = JSON.parse(fs.readFileSync(path.join(versionDir(id), `${id}.json`), 'utf8'));
-    const main = String(json.mainClass ?? '');
-    const name = String(json.id ?? '');
-    // NeoForge 也用 BootstrapLauncher，先按名字/包名判 NeoForge，别被 forge 分支抢先
-    if (/neoforge/i.test(name) || /neoforge/i.test(main)) return 'neoforge';
-    if (/bootstraplauncher|fml/i.test(main)) return 'forge';
-    if (main.includes('fabric')) return 'fabric';
+    return detectLoader(json);
   } catch {
     /* 版本文件坏了就当未知 */
   }
