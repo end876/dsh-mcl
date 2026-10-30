@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "title": "Minecraft 启动器",
+    "description": "设置页管版本与安装，右下角浮窗看状态：拖动、日志尾巴、内存、登录、崩溃诊断。"
+  },
+  "section": {
+    "title": "Minecraft",
+    "subtitle": "离线 / 正版启动 · 版本安装 · 模组识别"
+  },
+  "windows": {
+    "title": "窗口",
+    "embedded": "内置浮窗",
+    "embeddedHint": "显示在 DSH 右下角，可拖动、看日志、诊断",
+    "hiddenHint": "已隐藏，随时可以再打开",
+    "show": "显示浮窗",
+    "hide": "隐藏浮窗",
+    "standalone": "独立窗口",
+    "standaloneHint": "单独开一个浏览器窗口，打开后会自动收起内置浮窗",
+    "open": "打开独立窗口"
+  },
+  "launch": {
+    "title": "启动游戏",
+    "player": "玩家名",
+    "memory": "内存",
+    "start": "启动游戏",
+    "startOnline": "启动游戏（正版）",
+    "stop": "停止游戏",
+    "hint": "先选一个已安装的版本"
+  },
+  "install": {
+    "title": "安装原版",
+    "button": "安装"
+  },
+  "mod": {
+    "title": "模组识别",
+    "pick": "选一个 .jar 或整合包",
+    "empty": "选一个文件，自动判断需要哪个模组框架"
+  },
+  "panel": {
+    "logs": "日志",
+    "diagnose": "崩溃诊断",
+    "copyLogs": "复制日志",
+    "login": "微软登录",
+    "offline": "离线玩家（未登录）",
+    "noLogs": "暂时没有日志",
+    "noVersions": "还没有安装版本"
+  }
+}

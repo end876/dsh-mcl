@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MCL · Minecraft 启动器</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+          <defs>
+            <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#6fb8ff" />
+              <stop offset="100%" stop-color="#5a63ff" />
+            </linearGradient>
+          </defs>
+          <path d="M8 34c0-11 9-20 20-20 8 0 15 5 18 12 2 0 4 0 6 1 2 1 3 3 2 5-1 2-3 3-6 3h-3c-2 6-8 10-15 10H20c-7 0-12-5-12-11Z" fill="url(#g)" />
+          <circle cx="24" cy="30" r="2.6" fill="#0a1020" />
+        </svg>
+        <div>
+          <h1>MCL</h1>
+          <p>Minecraft 启动器</p>
+        </div>
+      </div>
+      <div class="status">
+        <span class="pill" id="pill-java">Java 检测中</span>
+        <span class="pill" id="pill-source">下载源</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="card versions">
+        <div class="card-head">
+          <h2>版本</h2>
+          <button class="ghost" id="btn-refresh">刷新</button>
+        </div>
+        <div class="groups" id="version-groups"></div>
+        <div class="empty" id="version-empty">还没有安装版本，下面选一个安装</div>
+        <div class="install-row">
+          <div class="picker" id="remote-picker">
+            <button type="button" class="picker-btn" id="picker-btn" aria-haspopup="listbox">
+              <span id="picker-label">选择版本</span><span class="caret"></span>
+            </button>
+            <div class="picker-pop" id="picker-pop" hidden>
+              <input id="picker-search" type="text" placeholder="搜索版本…" />
+              <div class="picker-list" id="picker-list"></div>
+            </div>
+          </div>
+          <button class="primary" id="btn-install">安装</button>
+        </div>
+        <p class="hint">自动在官方源与镜像之间选较快的</p>
+      </section>
+
+      <section class="card launch">
+        <div class="card-head"><h2>启动</h2></div>
+        <div class="fields">
+          <label><span>玩家名</span><input id="input-user" type="text" value="Player" maxlength="16" spellcheck="false" /></label>
+          <label class="msa-label"><span>正版账号</span>
+            <button type="button" class="ghost" id="btn-msa">微软登录</button>
+          </label>
+          <label class="memory-field">
+            <span>内存 <b id="memory-label">2 G</b></span>
+            <div class="memory-line">
+              <input id="input-memory" type="range" min="1" max="16" step="1" value="2" />
+              <button class="primary small" id="memory-confirm" hidden>确定</button>
+            </div>
+          </label>
+          <label><span>窗口宽</span><input id="input-width" type="number" value="854" min="320" max="3840" /></label>
+          <label><span>窗口高</span><input id="input-height" type="number" value="480" min="240" max="2160" /></label>
+        </div>
+        <div class="actions">
+          <button class="primary big" id="btn-launch" disabled>启动游戏</button>
+          <button class="danger" id="btn-stop" hidden>停止</button>
+        </div>
+        <p class="hint" id="launch-hint">先选一个版本</p>
+        <div class="quick-launch" id="quick-launch"></div>
+      </section>
+
+      <section class="card inspect">
+        <div class="card-head">
+          <h2>模组 / 整合包</h2>
+          <div class="tabs">
+            <button class="tab active" data-kind="mod">模组</button>
+            <button class="tab" data-kind="pack">整合包</button>
+          </div>
+        </div>
+        <button class="primary open-library" id="btn-open-library">打开模组库 · 浏览与一键下载</button>
+        <div class="divider">或直接选本地文件</div>
+        <label class="drop" id="drop">
+          <input type="file" id="file-input" hidden />
+          <span id="drop-text">拖入 .jar 或点击选择，自动识别需要的模组框架</span>
+        </label>
+        <div class="path-row">
+          <input id="inspect-path" type="text" placeholder="或粘贴本地文件路径（大整合包用这个）" />
+          <button class="ghost" id="btn-pick-file">浏览…</button>
+          <button class="ghost" id="btn-inspect-path">识别</button>
+        </div>
+        <div class="result" id="inspect-result" hidden></div>
+      </section>
+
+      <section class="card console-card">
+        <div class="card-head">
+          <h2>运行日志</h2>
+          <button class="ghost" id="btn-clear">清空</button>
+        </div>
+        <pre class="console" id="console"></pre>
+      </section>
+    </main>
+
+    <div class="drawer-mask" id="drawer-mask" hidden></div>
+
+    <section class="drawer" id="drawer" aria-hidden="true">
+      <header class="drawer-head">
+        <div class="drawer-title">
+          <strong id="drawer-title">模组库</strong>
+          <span id="drawer-sub">Modrinth · Fabric</span>
+        </div>
+        <div class="tabs" id="drawer-tabs">
+          <button class="tab active" data-kind="mod">模组</button>
+          <button class="tab" data-kind="pack">整合包</button>
+          <button class="tab" data-kind="shader">光影</button>
+        </div>
+        <input id="drawer-search" type="text" placeholder="搜索名称…" />
+        <input id="drawer-mc" type="text" value="1.20.1" class="mc-input" title="Minecraft 版本" />
+        <label class="filter-toggle"><input type="checkbox" id="drawer-version-filter" checked /> 按版本筛选</label>
+        <select id="drawer-sort" class="sort-select" title="排序方式">
+          <option value="relevance">相关度</option>
+          <option value="downloads">下载量</option>
+          <option value="updated">最近更新</option>
+          <option value="newest">最新发布</option>
+        </select>
+        <button class="ghost" id="drawer-close">关闭</button>
+      </header>
+      <div class="drawer-filters" id="drawer-filters"></div>
+      <div class="drawer-body" id="drawer-list"></div>
+      <footer class="drawer-foot">
+        <span id="drawer-count">未选择</span>
+        <button class="primary" id="drawer-install" disabled>一键下载</button>
+      </footer>
+    </section>
+
+    <div class="dialog-mask" id="conflict-mask" hidden></div>
+    <div class="dialog" id="conflict-dialog" hidden>
+      <h3>检测到冲突</h3>
+      <div id="conflict-body"></div>
+      <p class="hint">继续下载可能导致游戏启动失败、崩溃或模组行为异常。建议先取消，排除冲突后再安装。</p>
+      <div class="dialog-actions">
+        <button class="ghost" id="conflict-cancel">取消</button>
+        <button class="danger" id="conflict-continue">仍然下载</button>
+      </div>
+    </div>
+
+    <div class="dialog-mask" id="detail-mask" hidden></div>
+    <div class="dialog detail-dialog" id="detail-dialog" hidden>
+      <header class="detail-head">
+        <img id="detail-icon" alt="" />
+        <div>
+          <h3 id="detail-title" class="detail-title">详情</h3>
+          <div class="detail-meta" id="detail-meta"></div>
+        </div>
+      </header>
+      <div class="detail-body">
+        <h4>中文介绍（自动翻译摘要）</h4>
+        <p id="detail-zh" class="detail-text">翻译中…</p>
+        <h4>English Description</h4>
+        <div id="detail-en" class="detail-text detail-en"></div>
+      </div>
+      <div class="dialog-actions">
+        <button class="ghost" id="detail-close">关闭</button>
+      </div>
+    </div>
+
+    <div class="msa-box" id="msa-box" hidden>
+      <h3>微软登录</h3>
+      <p>1. 打开 <a id="msa-link" target="_blank" rel="noopener">https://www.microsoft.com/link</a></p>
+      <p>2. 输入代码：<b id="msa-code">------</b></p>
+      <p class="hint" id="msa-status">等待你在网页上完成登录…</p>
+      <div class="dialog-actions">
+        <button class="ghost" id="msa-close">关闭</button>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

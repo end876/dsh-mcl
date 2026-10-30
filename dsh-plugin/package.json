@@ -1,0 +1,23 @@
+{
+  "name": "@local/dsh-mc-launcher",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "description": "在 DSH 里启动 Minecraft：可拖动的状态浮窗（日志 / 进度 / 内存 / 登录 / 诊断），设置页管版本与安装",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": ["index.js", "client.js", "cordis.patch.yml", "locale/*.json", "icon.svg", "README.md"],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  }
+}

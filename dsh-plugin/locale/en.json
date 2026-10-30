@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "title": "Minecraft Launcher",
+    "description": "Install and manage versions in Settings; a draggable panel shows logs, memory, login and crash diagnosis."
+  },
+  "section": {
+    "title": "Minecraft",
+    "subtitle": "Offline or Microsoft launch, version install, mod detection"
+  },
+  "windows": {
+    "title": "Windows",
+    "embedded": "Embedded panel",
+    "embeddedHint": "Bottom-right of DSH; draggable, logs, diagnostics",
+    "hiddenHint": "Hidden — you can bring it back any time",
+    "show": "Show panel",
+    "hide": "Hide panel",
+    "standalone": "Standalone window",
+    "standaloneHint": "Open the launcher in its own window; the embedded panel is hidden automatically",
+    "open": "Open standalone window"
+  },
+  "launch": {
+    "title": "Launch game",
+    "player": "Player",
+    "memory": "Memory",
+    "start": "Launch",
+    "startOnline": "Launch (Microsoft account)",
+    "stop": "Stop game",
+    "hint": "Select an installed version first"
+  },
+  "install": {
+    "title": "Install vanilla",
+    "button": "Install"
+  },
+  "mod": {
+    "title": "Mod detection",
+    "pick": "Pick a .jar or modpack",
+    "empty": "Choose a file to detect which mod loader it needs"
+  },
+  "panel": {
+    "logs": "Logs",
+    "diagnose": "Diagnose",
+    "copyLogs": "Copy logs",
+    "login": "Sign in",
+    "offline": "Offline player (not signed in)",
+    "noLogs": "No logs yet",
+    "noVersions": "No installed versions"
+  }
+}

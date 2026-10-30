@@ -1,0 +1,3 @@
+- insert:
+    - id: mc-launcher
+      name: '@local/dsh-mc-launcher'

@@ -1,0 +1,116 @@
+# TODO
+
+记录已知问题与后续计划。✅ 表示已修复，⬜ 表示待办。
+
+## ✅ 已修复
+
+- [x] Fabric 安装收尾卡死（下载无数据看门狗，90s 无数据重试）
+- [x] 实例 id 与目录不一致导致模组装进游戏读不到的目录（`ensureFabricInstance` / `ensureInstance`）
+- [x] 按配置隔离实例（`fabric-<mc>-<label>`）
+- [x] JVM 参数按 Java 版本分档（`SoftMaxHeapSize` 仅 JDK 12+，G1 细调仅 9+）
+- [x] 版本目录名 ≠ json id 时无法启动（`findVersionDir` 扫描）
+- [x] 版本列表不显示目录名异常的实例（`installedVersions` 兼容）
+- [x] 光影搜索误带 loader 筛选
+- [x] 版本推断把模组版本号当 MC 版本（minor 限定 7~30）
+- [x] Java 探测缓存 60s（`/api/state` 102ms → 6ms）
+- [x] CORS 白名单 + 非白名单 403
+- [x] ZIP64 支持
+- [x] 批量下载并发 5
+- [x] 导入覆盖前备份（上限 2000 文件 → `.import-backup/`）
+- [x] 内存滑条 + 安全上限（可用内存 - 1G）+ 确定按钮
+- [x] **Java 17+ 起不来的致命 bug**：`G1NewSizePercent` / `G1MaxNewSizePercent` 是实验参数，
+      不加 `-XX:+UnlockExperimentalVMOptions` 时 JVM 直接 "Could not create the Java Virtual Machine"
+- [x] 版本列表的 Java 版本按继承链解析（Fabric 的 json 不写 `javaVersion`，之前一律显示 8）
+- [x] `/api/logs`：日志尾巴接口（读文件末尾 128KB、清洗控制字符与超长行）
+- [x] 运行时快照 `.mcl-runtime.json`（真实 java pid / 内存上限 / 启动时间 / 退出码）
+- [x] 状态接口带 `runtime`（存活、常驻内存、运行时长、退出码），`/api/stop` 也能收掉命令行启动的 java
+- [x] **DSH 桌面版页面来源 `dsh-app://app` 被 CORS 白名单挡成 403**：浮窗一直显示"离线"、拿不到版本列表
+- [x] **浮窗位置算到屏幕外**：`position: fixed` 的原点是宿主容器（可能带 transform），
+      改成用「真实 rect − 写入的 left/top」反推容器偏移，一律按屏幕坐标摆放；外加每 2 秒保险丝
+- [x] **浮窗太透明**：面板底 `bg-overlay` → `bg-layer-1`，日志区 `bg-base`，字号 10.5 → 11
+- [x] **内置浮窗独立开关**（`mcl.embedded`）：设置页按钮单独控制；点「打开独立窗口」自动收起内置浮窗
+- [x] **独立窗口"开了但最小化"**：从隐藏窗口（DSH 宿主 / 启动.bat）直接 spawn 浏览器会继承隐藏状态，
+      改用 `cmd /c start`（ShellExecute）起窗口，显示状态由系统给
+- [x] 头部拖拽会吞掉按钮点击（`preventDefault` 把 click 也吃了）：按钮区域不参与拖拽
+
+### 插件代码审查修复（2026-10-30）
+
+- [x] 设置页 + 浮窗各开一个 `/api/state` 轮询器 → 合并成共享 store（单定时器、内容不变不重渲染、后台降频）
+- [x] 日志轮询固定 2.6s → 按状态降频（运行 2.5s / 空闲 10s / 后台 8s），内容没变不更新
+- [x] 复制按钮在 `dsh-app://` 非安全上下文可能不可用 → `execCommand` 兜底
+- [x] 登录过期仍带 `--auth` 启动（游戏卡在登录）→ 标记过期、退回离线、可重新登录
+- [x] 选中实例被删后下拉空白 → 自动回退第一个可用实例
+- [x] 浮窗隐藏时仍在跑保险丝/轮询 → 全部停掉
+- [x] 拖动 `pointermove` 每次写位置 → 按帧合并（rAF）
+- [x] Host 半边竞态：探测中被卸载仍会拉起服务；端口被别的服务占用被误判为就绪 → disposed 标记 + `GET /api/state` 验证
+- [x] 服务端：版本摘要缓存 20s（任务结束失效）；`/api/logs` 不再起 `tasklist`；内存缓存 5s → 10s
+
+### 0.3.0（2026-10-30）
+
+- [x] **浮窗 / 设置页显示安装·启动进度**：接 `/api/events`，显示「安装 1.20.1 · 进度 87% …」实时行
+- [x] **动态端口 + 本地发现**：51730 被占自动往后找（最多 20 个），实际端口写 `~/.mcl/server.json`；
+      插件 Host 半边与界面都会自动发现并重连（含 SSE），端口被占也能自愈
+- [x] 修 `/api/events` 缺 CORS 头：跨源页面（`dsh-app://app`）订阅 SSE 会被浏览器拦掉
+- [x] `server.json` 增加 `process.on('exit')` 清理（被强杀时残留无害，客户端以 HTTP 校验为准）
+- [x] 登录结果改 SSE 即时反馈（轮询保留作兜底）
+
+### 0.4.0（2026-10-30）
+
+- [x] **DSH 插件加模组库**：Modrinth 搜索（模组/整合包/光影）、冲突预检、批量安装、进度走 SSE
+- [x] **前置依赖递归展开**：`installModsBatch` 原来只补一层，改成按层展开（最多 4 层、防环）
+- [x] **本地 jar 前置识别**：`inspectArchive` 解析 fabric.mod.json / quilt.mod.json / mods.toml 的依赖，
+      新增 `/api/mods/resolve` 把 mod id 反查成项目；界面可一键装缺失前置
+- [x] `/api/state` 的版本摘要加 `mc`（实例真实 MC 版本；PCL 包按 mod 名投票推断）
+- [x] 搜索结果加 `categoriesZh`（中文分类，顺带过滤 loader 名噪音）
+- [x] CLI 帮助补上 `mcl mods`（批量装模组）
+
+### 调试开关
+
+- `MCL_LOG_HTTP=1 node bin/mcl.mjs gui` → 每个请求记一行到 `tmp/http-requests.log`（状态码 / 来源 / 耗时）
+- 浮窗每次挂载往 `tmp/client-mounts.log` 打一条信标（位置、尺寸、实例、有没有拿到状态）
+
+## ⬜ 待办（按优先级）
+
+### P0
+- [ ] **zip 流式读取**：`zip.mjs` 目前整文件读入内存（1.4GB 包峰值 1.4GB）。
+      改为 fd + `readSync` 按需读：先读中央目录，再按偏移读条目；API 变异步，
+      调用方（install / import / mods / mrpack）跟改。
+
+### P1
+- [ ] **版本目录解析收口**：`findVersionDir` / `readLocalVersionJson` / `installedVersions`
+      三处逻辑统一成一个 `resolveVersionDir(id)`，避免再次出现"修一处漏一处"。
+- [ ] **已知 MC 版本集合**：版本推断只从 Piston Meta 拉取（或内置）的合法版本集合里投票；
+      票数 < 阈值（如 3）时提示"无法自动识别，请手动选择"，不硬猜。
+- [x] **动态端口 + 本地发现**：启动时选空闲端口，写入 pid/端口文件；
+      DSH 插件读文件发现服务地址，端口被占也能自愈。（0.3.0 完成：`~/.mcl/server.json` + 端口扫描）
+
+### P2
+- [ ] 启动前完整性校验：版本 json / natives / libraries 缺失时先补再启动。
+- [ ] JVM 参数表化：用「Java 版本 → 参数集」映射替代 if 链；
+      可选加 `java -XX:+PrintFlagsFinal -version` 探测并缓存（每 java 路径一次）。
+      ⚠️ `--add-opens` 不是通用需求，做成可选开关而非默认。
+- [ ] Modrinth 限流：元数据请求单独限流（并发上限），退避改为指数退避。
+- [ ] 抽屉渲染：后续页已改追加，但 `analyzeInBackground` 仍会整体重渲染，可改按行更新。
+- [ ] 批量下载进度合并显示（目前每个文件一行 `step`）。
+- [ ] `dist/` 是旧快照（比 src 少了浮窗/日志/认证改动），发版前要重新生成。
+      桌面存档只放压缩包，命名 `MCL启动器-v<主>.<次>.zip`：v0.1 / v0.2 / v0.3 / v0.4 都是完整包
+      （`mc-launcher\` 启动器源码 + `dsh-plugin\` 插件 + 使用说明/操作文档/启动.bat）。
+- [ ] 浏览器版 UI 也接上 `/api/logs` 状态面板（现在只有 DSH 浮窗有）。
+
+### P3
+- [ ] Forge / NeoForge 支持（当前仅 Fabric）。
+- [ ] 发行打包（免装 Node 的单文件/安装器）。
+- [x] DSH 插件：接上模组库、光影，端口改为动态发现。（0.4.0 全部完成）
+- [ ] 模组库可以再补：图标显示、按下载/更新排序、已装标记（现在只按相关度、不显示已装）
+- [ ] 详情页翻译请求可取消；翻译接口限流处理。
+- [ ] 重复模组检测目前是文件名级，存在误报。
+- [ ] `--detach` 模式仍会创建 `launcher-console.log` 流但不写入。
+- [ ] 光影安装的目标实例选择（现在插件里装光影会进当前选中实例）。
+
+## 设计备注
+
+- 源抽象层：`mojang` / `bmclapi`，`auto` 并行探测取先应答者，另一个作回退。
+- BMCLAPI 会 403 浏览器 UA，必须带启动器 UA。
+- `maven.fabricmc.net` 国内常超时，Fabric 依赖走 BMCLAPI maven 镜像。
+- PCL 合并后的版本 json 没有 `inheritsFrom`，MC 版本靠 mod 文件名投票推断。
+- 「解压即玩」包是完整 `.minecraft`，导入采用合并 + 备份，不是隔离目录。
