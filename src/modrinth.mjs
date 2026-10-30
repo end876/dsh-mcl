@@ -4,6 +4,7 @@ import { download, fetchJson, runPool } from './http.mjs';
 import { openZipBuffer } from './zip.mjs';
 import { ensureDir, GAME_DIR, versionDir } from './paths.mjs';
 import { ensureFabricInstance, ensureInstance, instanceModsDir } from './fabric.mjs';
+import { ensureLoaderInstance, installLoader } from './loader.mjs';
 import { Progress, ok, step, warn } from './log.mjs';
 
 const API = 'https://api.modrinth.com/v2';
@@ -147,13 +148,18 @@ export async function analyzeProjects({ projectIds, mcVersion, loader = 'fabric'
 
 export async function installMod(projectId, { mcVersion, loader = 'fabric', sourceName = 'auto' } = {}) {
   if (!mcVersion) throw new Error('缺少目标 Minecraft 版本');
-  if (loader !== 'fabric') throw new Error(`暂只支持 Fabric，收到 ${loader}`);
+  const loaderKind = String(loader).toLowerCase();
+  if (!['fabric', 'forge', 'neoforge'].includes(loaderKind)) {
+    throw new Error(`不支持的加载器：${loader}（可用 fabric / forge / neoforge）`);
+  }
 
-  const version = await pickVersion(projectId, { loader, mcVersion });
+  const version = await pickVersion(projectId, { loader: loaderKind, mcVersion });
   if (!version) throw new Error('这个模组没有适配当前版本的文件');
 
-  step(`准备 Fabric 实例（${mcVersion}）`);
-  const instance = await ensureInstance(mcVersion, 'mods', { sourceName });
+  step(`准备 ${loaderKind} 实例（${mcVersion}）`);
+  const instance = loaderKind === 'fabric'
+    ? await ensureInstance(mcVersion, 'mods', { sourceName })
+    : await ensureLoaderInstance(loaderKind, mcVersion, { sourceName });
 
   const file = version.files.find((item) => item.primary) ?? version.files[0];
   if (!file) throw new Error('这个版本没有可下载文件');
@@ -168,10 +174,15 @@ export async function installMod(projectId, { mcVersion, loader = 'fabric', sour
 
 export async function installModsBatch(projectIds, { mcVersion, loader = 'fabric', sourceName = 'auto' } = {}) {
   if (!mcVersion) throw new Error('缺少目标 Minecraft 版本');
-  if (loader !== 'fabric') throw new Error('暂只支持 Fabric');
+  const loaderKind = String(loader).toLowerCase();
+  if (!['fabric', 'forge', 'neoforge'].includes(loaderKind)) {
+    throw new Error(`不支持的加载器：${loader}（可用 fabric / forge / neoforge）`);
+  }
 
-  step(`准备 Fabric 实例（${mcVersion}）`);
-  const instance = await ensureInstance(mcVersion, 'mods', { sourceName });
+  step(`准备 ${loaderKind} 实例（${mcVersion}）`);
+  const instance = loaderKind === 'fabric'
+    ? await ensureInstance(mcVersion, 'mods', { sourceName })
+    : await ensureLoaderInstance(loaderKind, mcVersion, { sourceName });
 
   const wanted = [...new Set(projectIds)];
   const resolved = new Map();
@@ -244,13 +255,32 @@ export async function installModpack(projectId, { mcVersion, sourceName = 'auto'
   const deps = index.dependencies ?? {};
   const packMc = mcVersion ?? deps.minecraft;
   if (!packMc) throw new Error('整合包没有声明 Minecraft 版本');
-  if (!deps['fabric-loader']) {
-    const loaderText = deps.forge ? 'Forge' : deps.neoforge ? 'NeoForge' : deps['quilt-loader'] ? 'Quilt' : '其他加载器';
-    throw new Error(`这个整合包需要 ${loaderText}，暂时只支持 Fabric 整合包`);
+
+  // 按 dependencies 分派加载器：fabric-loader / forge / neoforge
+  let loaderKind = 'fabric';
+  let loaderVersion;
+  if (deps['fabric-loader']) {
+    loaderKind = 'fabric';
+    loaderVersion = deps['fabric-loader'];
+  } else if (deps.neoforge) {
+    loaderKind = 'neoforge';
+    loaderVersion = deps.neoforge;
+  } else if (deps.forge) {
+    loaderKind = 'forge';
+    loaderVersion = deps.forge;
+  } else {
+    const loaderText = deps['quilt-loader'] ? 'Quilt' : '其他加载器';
+    throw new Error(`这个整合包需要 ${loaderText}，目前支持 Fabric / Forge / NeoForge`);
   }
 
-  step(`准备整合包实例（${packMc} / ${projectId}）`);
-  const instance = await ensureInstance(packMc, projectId, { sourceName });
+  step(`准备整合包实例（${packMc} / ${loaderKind} / ${projectId}）`);
+  const instance = loaderKind === 'fabric'
+    ? await ensureInstance(packMc, projectId, { sourceName })
+    : (await installLoader(loaderKind, packMc, {
+      loaderVersion,
+      sourceName,
+      instanceId: `${loaderKind}-${packMc}-${String(projectId).slice(0, 12)}`,
+    })).id;
   const instanceRoot = versionDir(instance);
   ensureDir(instanceRoot);
 

@@ -16,3 +16,8 @@ logs/
 .idea/
 .DS_Store
 Thumbs.db
+
+# 本地工作笔记（不随仓库发布）
+PLAN.md
+交接文档.md
+项目说明.md

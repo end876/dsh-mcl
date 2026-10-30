@@ -8,6 +8,7 @@ import { buildCommand, launch, printCommand } from '../src/launch.mjs';
 import { listJava, findJava } from '../src/java.mjs';
 import { startGui } from '../src/server.mjs';
 import { installFabric } from '../src/fabric.mjs';
+import { installLoader, listLoaderVersions } from '../src/loader.mjs';
 import { installMod, installModpack, installModsBatch } from '../src/modrinth.mjs';
 import { scanAll, scanInstance } from '../src/dupes.mjs';
 import { importArchive } from '../src/import.mjs';
@@ -197,6 +198,8 @@ function cmdHelp() {
   say('    mcl gui                     打开图形界面（默认）');
   say('    mcl install <版本>          下载安装（版本可写 latest / 1.20.1 / 1.21）');
   say('    mcl fabric <mc版本>         安装 Fabric 实例');
+  say('    mcl forge <mc版本>          安装 Forge 实例（--loader 指定版本 / --list-loaders 看列表）');
+  say('    mcl neoforge <mc版本>       安装 NeoForge 实例');
   say('    mcl mod <项目ID> --mc 1.20.1  安装一个 Modrinth 模组');
   say('    mcl mods <项目ID...> --mc 1.20.1  批量安装模组（自动补前置、并发下载）');
   say('    mcl pack <项目ID> --mc 1.20.1 安装一个 Modrinth 整合包');
@@ -236,11 +239,33 @@ async function cmdFabric(positional, flags) {
   info(`加载器 ${result.loader} · Minecraft ${result.mcVersion}`);
 }
 
+async function cmdLoader(positional, flags, loader) {
+  const mc = positional[1];
+  const label = loader === 'forge' ? 'Forge' : 'NeoForge';
+  if (!mc) throw new Error(`用法：mcl ${loader} <mc版本> [--loader 版本]`);
+  if (flags['list-loaders']) {
+    const list = await listLoaderVersions(loader, mc);
+    say(`${label} 可用版本（MC ${mc}）：${list.slice(0, 20).join('、') || '（无）'}`);
+    return;
+  }
+  const result = await installLoader(loader, mc, {
+    loaderVersion: typeof flags.loader === 'string' ? flags.loader : undefined,
+    sourceName: sourceNameFrom(flags),
+  });
+  say();
+  ok(`${label} 实例就绪：${c.bold(result.id)}`);
+  info(`加载器 ${result.loaderVersion} · Minecraft ${result.mcVersion}`);
+}
+
 async function cmdMod(positional, flags) {
   const projectId = positional[1];
   const mc = flags.mc;
   if (!projectId || !mc) throw new Error('用法：mcl mod <Modrinth项目ID> --mc 1.20.1');
-  const result = await installMod(projectId, { mcVersion: String(mc), sourceName: sourceNameFrom(flags) });
+  const result = await installMod(projectId, {
+    mcVersion: String(mc),
+    loader: typeof flags.loader === 'string' ? flags.loader : 'fabric',
+    sourceName: sourceNameFrom(flags),
+  });
   say();
   ok(`已安装 ${result.title}`);
   info(`位置：${result.instance}/mods/${result.file}`);
@@ -250,7 +275,11 @@ async function cmdMods(positional, flags) {
   const ids = positional.slice(1).filter(Boolean);
   const mc = flags.mc;
   if (ids.length === 0 || !mc) throw new Error('用法：mcl mods <项目ID...> --mc 1.20.1');
-  const result = await installModsBatch(ids, { mcVersion: String(mc), sourceName: sourceNameFrom(flags) });
+  const result = await installModsBatch(ids, {
+    mcVersion: String(mc),
+    loader: typeof flags.loader === 'string' ? flags.loader : 'fabric',
+    sourceName: sourceNameFrom(flags),
+  });
   say();
   ok(`已安装 ${result.count} 个文件到 ${result.instance}/mods`);
 }
@@ -349,6 +378,12 @@ async function main() {
     case 'fabric':
     case 'loader':
       await cmdFabric(positional, flags);
+      break;
+    case 'forge':
+      await cmdLoader(positional, flags, 'forge');
+      break;
+    case 'neoforge':
+      await cmdLoader(positional, flags, 'neoforge');
       break;
     case 'mod':
       await cmdMod(positional, flags);

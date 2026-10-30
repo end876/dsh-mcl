@@ -15,6 +15,8 @@
 - ✅ 版本隔离目录（和 PCL 一致：`versions/<版本名>/` 作为独立游戏目录）
 - ✅ 下载 SHA1 校验、断点跳过、失败重试、并发下载（并发 5）
 - ✅ **Fabric** 实例安装（按配置隔离 `fabric-<mc>-<label>`）
+- ✅ **Forge / NeoForge** 实例安装：从 installer 里取 `install_profile.json`，自己跑 processors
+  （binpatch / jarsplitter / AutoRenamingTool），不调用官方 installer 本体；依赖走 BMCLAPI maven 镜像
 - ✅ **Modrinth** 搜索 / 分类 / 排序、冲突检测、前置依赖、批量安装
 - ✅ `.mrpack` 安装、**解压即玩**包导入（合并 + 覆盖前备份）
 - ✅ 光影下载（自动检查 Iris）
@@ -24,7 +26,7 @@
 - ✅ **动态端口**：51730 被占用自动往后找，实际端口写 `~/.mcl/server.json`，客户端自动发现
 - ✅ SSE 事件流（安装/启动进度、登录结果），带跨源 CORS
 - ✅ **模组库（DSH 插件里）**：Modrinth 搜索、冲突预检、批量安装、前置递归补齐、本地 jar 前置识别
-- ⬜ Forge / NeoForge（暂只支持 Fabric）
+- ⬜ Quilt
 
 ## 快速开始
 
@@ -61,29 +63,6 @@ mcl gui                 # 或直接 mcl
 
 服务端零依赖（Node 内置 `http` + SSE），只把 CLI 当子进程调用，所以界面和命令行行为完全一致。
 
-## 在 DSH 里用（插件）
-
-仓库里的 `dsh-plugin/` 就是这个启动器的 [DeepSeek Harness](https://github.com/deepseek-ai) 插件：右下角可拖动的浮窗（安装/启动进度、日志、内存、登录、崩溃诊断），设置页管版本与安装，Modrinth 模组库也在插件里。
-
-1. 把仓库放在插件能找到的位置（插件默认找 `~/mc-launcher`，或用环境变量指定）：
-
-```bash
-git clone https://github.com/<你>/dsh-mcl ~/mc-launcher
-set MCL_HOME=D:\path\to\mc-launcher    # 放别处时用这个
-```
-
-2. 把 `dsh-plugin/` 放进 DSH profile 的 `node_modules/`（包名 `@local/dsh-mc-launcher`），在 profile 的 `cordis.patch.yml` 里挂一条：
-
-```yaml
-- insert:
-    - id: mc-launcher
-      name: '@local/dsh-mc-launcher'
-```
-
-插件会自己拉起 `bin/mcl.mjs`；启动器已经在跑就复用 `~/.mcl/server.json` 里记录的端口（动态端口 51730~51749）。
-
-插件自己的说明见 [`dsh-plugin/README.md`](dsh-plugin/README.md)，安装细节见 [`操作文档.md`](操作文档.md)。
-
 ## 命令
 
 | 命令 | 说明 |
@@ -91,6 +70,8 @@ set MCL_HOME=D:\path\to\mc-launcher    # 放别处时用这个
 | `mcl gui` | 打开图形界面 |
 | `mcl install <版本>` | 安装原版；版本支持 `latest` / `1.20.1` / `1.21` |
 | `mcl fabric <mc版本>` | 安装 Fabric 实例 |
+| `mcl forge <mc版本>` | 安装 Forge 实例；`--loader 47.2.0` 指定版本，`--list-loaders` 看可用版本 |
+| `mcl neoforge <mc版本>` | 安装 NeoForge 实例（同上参数） |
 | `mcl mod <项目ID> --mc 1.20.1` | 装一个 Modrinth 模组（含前置依赖） |
 | `mcl pack <项目ID> --mc 1.20.1` | 装一个 Modrinth 整合包 |
 | `mcl import "<zip路径>"` | 导入解压即玩包（合并 + 备份） |
@@ -156,7 +137,7 @@ mc-launcher/
 - [x] 崩溃日志归因
 - [x] 微软正版登录
 - [x] DSH 插件（浮窗 + 设置页）
-- [ ] Forge / NeoForge
+- [x] Forge / NeoForge（Forge 1.20.1 已实测：装完进得了游戏）
 - [ ] 发行打包（免装 Node）
 
 ## 更新日志

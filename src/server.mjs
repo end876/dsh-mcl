@@ -13,6 +13,7 @@ import { pickSource } from './source.mjs';
 import { inspectArchive, inferMcFromNames } from './mods.mjs';
 import { diagnoseSummary } from './diagnose.mjs';
 import { loadAuth, loginWithDeviceCode } from './auth.mjs';
+import { listLoaderVersions } from './loader.mjs';
 
 const MSA_CLIENT_ID = 'c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb';
 import { searchProjects, analyzeProjects, installModsBatch, getProjectDetail, installShader, resolveModIds } from './modrinth.mjs';
@@ -541,6 +542,43 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         return;
       }
 
+      if (route === '/api/loader/list') {
+        const loader = String(url.searchParams.get('loader') || 'forge').toLowerCase();
+        const mc = String(url.searchParams.get('mc') || '').trim();
+        if (!mc) {
+          sendJson(res, 400, { error: '缺少 mc 参数' });
+          return;
+        }
+        try {
+          sendJson(res, 200, { loader, mc, versions: await listLoaderVersions(loader, mc) });
+        } catch (error) {
+          sendJson(res, 400, { error: String(error?.message ?? error) });
+        }
+        return;
+      }
+
+      if (route === '/api/loader/install' && req.method === 'POST') {
+        const body = await readBody(req);
+        const loader = String(body.loader || 'forge').toLowerCase();
+        const mc = String(body.mcVersion || '').trim();
+        if (!['forge', 'neoforge'].includes(loader)) {
+          sendJson(res, 400, { error: 'loader 只能是 forge / neoforge' });
+          return;
+        }
+        if (!mc) {
+          sendJson(res, 400, { error: '缺少 Minecraft 版本' });
+          return;
+        }
+        const args = [loader, mc];
+        if (body.loaderVersion) args.push('--loader', String(body.loaderVersion));
+        runJob('install', args, {
+          version: `${loader} ${mc}`,
+          label: `安装 ${loader === 'forge' ? 'Forge' : 'NeoForge'} → ${mc}`,
+        });
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+
       if (route === '/api/remote') {
         if (!remoteCache || Date.now() - remoteAt > 5 * 60_000) {
           const { manifest, sources } = await pickSource('auto');
@@ -692,7 +730,7 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
           sendJson(res, 400, { error: '缺少项目 ID 或 Minecraft 版本' });
           return;
         }
-        runJob('install', ['mod', projectId, '--mc', mc], { version: `模组 ${projectId}` });
+        runJob('install', ['mod', projectId, '--mc', mc, ...(body.loader ? ['--loader', String(body.loader)] : [])], { version: `模组 ${projectId}` });
         sendJson(res, 200, { ok: true });
         return;
       }

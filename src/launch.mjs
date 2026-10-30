@@ -87,7 +87,11 @@ export function buildCommand(versionId, options = {}) {
   const classpathEntries = libraries.map((lib) => path.join(LIBRARIES_DIR, libraryRelPath(lib)));
   const jarId = resolved.jar ?? rootId;
   const clientJar = path.join(versionDir(jarId), `${jarId}.jar`);
-  classpathEntries.push(clientJar);
+  // Forge / NeoForge 1.17+ 走 BootstrapLauncher：补丁后的 client jar 由它扫描
+  // libraryDirectory 自己装进 module path，原版 jar 再进 classpath 会和它抢
+  // com.mojang.blaze3d.systems 的导出权（module ResolutionException）。
+  const modularLoader = /bootstraplauncher/i.test(String(resolved.mainClass ?? ''));
+  if (!modularLoader) classpathEntries.push(clientJar);
 
   const separator = classpathSeparator();
   const assetsIndex = resolved.assets ?? resolved.assetIndex?.id ?? 'legacy';
