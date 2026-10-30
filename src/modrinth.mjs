@@ -146,7 +146,7 @@ export async function analyzeProjects({ projectIds, mcVersion, loader = 'fabric'
   };
 }
 
-export async function installMod(projectId, { mcVersion, loader = 'fabric', sourceName = 'auto' } = {}) {
+export async function installMod(projectId, { mcVersion, loader = 'fabric', instance, sourceName = 'auto' } = {}) {
   if (!mcVersion) throw new Error('缺少目标 Minecraft 版本');
   const loaderKind = String(loader).toLowerCase();
   if (!['fabric', 'forge', 'neoforge'].includes(loaderKind)) {
@@ -156,33 +156,49 @@ export async function installMod(projectId, { mcVersion, loader = 'fabric', sour
   const version = await pickVersion(projectId, { loader: loaderKind, mcVersion });
   if (!version) throw new Error('这个模组没有适配当前版本的文件');
 
-  step(`准备 ${loaderKind} 实例（${mcVersion}）`);
-  const instance = loaderKind === 'fabric'
-    ? await ensureInstance(mcVersion, 'mods', { sourceName })
-    : await ensureLoaderInstance(loaderKind, mcVersion, { sourceName });
+  const target = await resolveTargetInstance({ instance, loaderKind, mcVersion, sourceName });
 
   const file = version.files.find((item) => item.primary) ?? version.files[0];
   if (!file) throw new Error('这个版本没有可下载文件');
 
-  const dest = path.join(instanceModsDir(instance), file.filename);
+  const dest = path.join(instanceModsDir(target), file.filename);
   step(`下载 ${file.filename}`);
   await download({ url: file.url, dest, sha1: file.hashes?.sha1, size: file.size });
-  ok(`已安装到 ${instance}/mods`);
+  ok(`已安装到 ${target}/mods`);
 
-  return { instance, file: file.filename, title: version.name ?? projectId };
+  return { instance: target, file: file.filename, title: version.name ?? projectId };
 }
 
-export async function installModsBatch(projectIds, { mcVersion, loader = 'fabric', sourceName = 'auto' } = {}) {
+/**
+ * 决定把模组装进哪个实例：
+ * - 明确指定了实例（插件里选中的那个）→ 就用它，不再另建
+ * - 没指定：Fabric 自动建 fabric-<mc>-mods；Forge/NeoForge 复用/新建对应加载器实例
+ */
+async function resolveTargetInstance({ instance, loaderKind, mcVersion, sourceName }) {
+  if (instance) {
+    const dir = versionDir(instance);
+    if (!fs.existsSync(path.join(dir, `${instance}.json`))) {
+      throw new Error(`找不到实例：${instance}`);
+    }
+    step(`安装到已有实例 ${instance}`);
+    return instance;
+  }
+  if (loaderKind === 'fabric') {
+    step(`准备 Fabric 实例（${mcVersion}）`);
+    return ensureInstance(mcVersion, 'mods', { sourceName });
+  }
+  step(`准备 ${loaderKind} 实例（${mcVersion}）`);
+  return ensureLoaderInstance(loaderKind, mcVersion, { sourceName });
+}
+
+export async function installModsBatch(projectIds, { mcVersion, loader = 'fabric', instance, sourceName = 'auto' } = {}) {
   if (!mcVersion) throw new Error('缺少目标 Minecraft 版本');
   const loaderKind = String(loader).toLowerCase();
   if (!['fabric', 'forge', 'neoforge'].includes(loaderKind)) {
     throw new Error(`不支持的加载器：${loader}（可用 fabric / forge / neoforge）`);
   }
 
-  step(`准备 ${loaderKind} 实例（${mcVersion}）`);
-  const instance = loaderKind === 'fabric'
-    ? await ensureInstance(mcVersion, 'mods', { sourceName })
-    : await ensureLoaderInstance(loaderKind, mcVersion, { sourceName });
+  const instanceId = await resolveTargetInstance({ instance, loaderKind, mcVersion, sourceName });
 
   const wanted = [...new Set(projectIds)];
   const resolved = new Map();
@@ -208,7 +224,7 @@ export async function installModsBatch(projectIds, { mcVersion, loader = 'fabric
     queue = [...new Set(next)];
   }
 
-  const modsDir = instanceModsDir(instance);
+  const modsDir = instanceModsDir(instanceId);
   const installed = [];
   const tasks = [...resolved.entries()];
   const progress = new Progress('mods', tasks.length, { count: true });
@@ -232,7 +248,7 @@ export async function installModsBatch(projectIds, { mcVersion, loader = 'fabric
     5,
   );
   progress.finish(`模组下载完成（${installed.length} 个）`);
-  return { instance, count: installed.length, files: installed };
+  return { instance: instanceId, count: installed.length, files: installed };
 }
 
 export async function installModpack(projectId, { mcVersion, sourceName = 'auto' } = {}) {

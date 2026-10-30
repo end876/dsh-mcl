@@ -326,9 +326,10 @@ export function loaderOfVersion(id) {
   try {
     const json = JSON.parse(fs.readFileSync(path.join(versionDir(id), `${id}.json`), 'utf8'));
     const main = String(json.mainClass ?? '');
-    if (main.includes('bootstraplauncher')) return 'forge';
-    if (main.includes('fml')) return 'forge';
-    if (main.includes('neoforge')) return 'neoforge';
+    const name = String(json.id ?? '');
+    // NeoForge 也用 BootstrapLauncher，先按名字/包名判 NeoForge，别被 forge 分支抢先
+    if (/neoforge/i.test(name) || /neoforge/i.test(main)) return 'neoforge';
+    if (/bootstraplauncher|fml/i.test(main)) return 'forge';
     if (main.includes('fabric')) return 'fabric';
   } catch {
     /* 版本文件坏了就当未知 */

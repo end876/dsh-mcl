@@ -64,6 +64,15 @@
 - [x] 搜索结果加 `categoriesZh`（中文分类，顺带过滤 loader 名噪音）
 - [x] CLI 帮助补上 `mcl mods`（批量装模组）
 
+### 0.5.1（2026-10-30）
+
+- [x] **模组库装错实例**：`/api/mods/install-batch` 把请求里的 `loader` 丢了，选了 Forge/NeoForge 实例
+      也会按 Fabric 装到别的实例；现在 `loader` + `instance` 都透传，选哪个实例就装哪个
+- [x] 修「安装这 N 个前置」按钮报错（`SettingsSection` 里误用了不存在的 `loader` 变量，应为 `targetLoader`）
+- [x] 修启动器版本号残留 0.4.0（`LAUNCHER_VERSION` 与 package.json 不同步，`--dry-run` 可见）
+- [x] 修 `loaderOfVersion()` 把 NeoForge 判成 Forge（两者 mainClass 都是 BootstrapLauncher）
+- [x] CLI `mcl mod` / `mcl mods` 新增 `--instance <实例>`
+
 ### 调试开关
 
 - `MCL_LOG_HTTP=1 node bin/mcl.mjs gui` → 每个请求记一行到 `tmp/http-requests.log`（状态码 / 来源 / 耗时）

@@ -260,10 +260,11 @@ async function cmdLoader(positional, flags, loader) {
 async function cmdMod(positional, flags) {
   const projectId = positional[1];
   const mc = flags.mc;
-  if (!projectId || !mc) throw new Error('用法：mcl mod <Modrinth项目ID> --mc 1.20.1');
+  if (!projectId || !mc) throw new Error('用法：mcl mod <Modrinth项目ID> --mc 1.20.1 [--loader forge] [--instance <实例>]');
   const result = await installMod(projectId, {
     mcVersion: String(mc),
     loader: typeof flags.loader === 'string' ? flags.loader : 'fabric',
+    instance: typeof flags.instance === 'string' ? flags.instance : undefined,
     sourceName: sourceNameFrom(flags),
   });
   say();
@@ -274,10 +275,11 @@ async function cmdMod(positional, flags) {
 async function cmdMods(positional, flags) {
   const ids = positional.slice(1).filter(Boolean);
   const mc = flags.mc;
-  if (ids.length === 0 || !mc) throw new Error('用法：mcl mods <项目ID...> --mc 1.20.1');
+  if (ids.length === 0 || !mc) throw new Error('用法：mcl mods <项目ID...> --mc 1.20.1 [--loader forge] [--instance <实例>]');
   const result = await installModsBatch(ids, {
     mcVersion: String(mc),
     loader: typeof flags.loader === 'string' ? flags.loader : 'fabric',
+    instance: typeof flags.instance === 'string' ? flags.instance : undefined,
     sourceName: sourceNameFrom(flags),
   });
   say();

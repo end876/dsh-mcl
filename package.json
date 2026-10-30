@@ -1,6 +1,6 @@
 {
   "name": "mc-launcher",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "一个零依赖的 Node 版 Minecraft 启动器：自动下载原版、Fabric、Forge、NeoForge、模组与整合包，内置状态浮窗与崩溃诊断",
   "type": "module",
   "bin": {

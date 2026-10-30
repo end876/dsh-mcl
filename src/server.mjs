@@ -737,7 +737,14 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
           sendJson(res, 400, { error: '缺少项目 ID 或 Minecraft 版本' });
           return;
         }
-        runJob('install', ['mod', projectId, '--mc', mc, ...(body.loader ? ['--loader', String(body.loader)] : [])], { version: `模组 ${projectId}` });
+        runJob('install', [
+          'mod',
+          projectId,
+          '--mc',
+          mc,
+          ...(body.loader ? ['--loader', String(body.loader)] : []),
+          ...(body.instance ? ['--instance', String(body.instance)] : []),
+        ], { version: `模组 ${projectId}`, label: `安装模组 → ${body.instance ? String(body.instance) : mc}` });
         sendJson(res, 200, { ok: true });
         return;
       }
@@ -781,9 +788,15 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
           sendJson(res, 400, { error: '缺少模组列表或 Minecraft 版本' });
           return;
         }
-        runJob('install', ['mods', ...projectIds, '--mc', mc], {
+        const args = ['mods', ...projectIds, '--mc', mc];
+        // 加载器要透传：Forge/NeoForge 的模组和 Fabric 不是同一批文件
+        if (body.loader) args.push('--loader', String(body.loader));
+        // 指定了实例就装进那个实例（插件里选中的），否则按加载器自动准备
+        if (body.instance) args.push('--instance', String(body.instance));
+        const where = body.instance ? String(body.instance) : mc;
+        runJob('install', args, {
           version: `${projectIds.length} 个模组`,
-          label: `安装 ${projectIds.length} 个模组 → ${mc}`,
+          label: `安装 ${projectIds.length} 个模组 → ${where}`,
         });
         sendJson(res, 200, { ok: true });
         return;

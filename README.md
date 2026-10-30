@@ -156,6 +156,16 @@ mc-launcher/
 
 ## 更新日志
 
+### 0.5.1（2026-10-30）
+
+- **修模组库装错实例**：`/api/mods/install-batch` 之前把请求里的 `loader` 丢了，选 Forge/NeoForge 实例
+  也会按 Fabric 装进另一个实例。现在 `loader`、`instance` 都会透传，装了哪个实例就装哪个；
+  没指定实例时才按加载器自动准备（Fabric 建 `fabric-<mc>-mods`，Forge/NeoForge 复用/新建对应实例）
+- 修「安装这 N 个前置」按钮点了报错：`SettingsSection` 里误用了不存在的 `loader` 变量
+- 修启动器版本号残留 0.4.0（`--dry-run` 里可见），改为 0.5.1
+- 修 `loaderOfVersion()` 把 NeoForge 判成 Forge（两者 mainClass 都是 BootstrapLauncher）
+- CLI：`mcl mod` / `mcl mods` 新增 `--instance <实例>`，可指定装进哪个实例
+
 ### 0.5.0（2026-10-30）
 
 - 插件设置页「安装游戏」收尾：加载器下拉（原版 / Fabric / Forge / NeoForge），选了加载器会按 MC 版本  

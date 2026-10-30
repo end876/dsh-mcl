@@ -718,10 +718,18 @@ window.__ModuleLoader__.load({
             setBusy(false);
             return;
           }
-          await post('/api/mods/install-batch', { projectIds: ids, mcVersion: mc, loader: loader ?? 'fabric' });
+          await post('/api/mods/install-batch', {
+            projectIds: ids,
+            mcVersion: mc,
+            loader: loader ?? 'fabric',
+            // 选中的实例本来就是这个加载器，就直接装进它，别再另建一个
+            ...(loader ? { instance: instanceId } : {}),
+          });
           setConfirming(false);
           setPicked(new Set());
-          onNotice?.(`已开始安装 ${ids.length} 个模组，进度看上面的进度条`);
+          onNotice?.(
+            `已开始安装 ${ids.length} 个模组到 ${loader ? instanceId : `fabric-${mc}-mods`}，进度看上面的进度条`,
+          );
         } catch (err) {
           setError(err.message);
         } finally {
@@ -1112,8 +1120,16 @@ window.__ModuleLoader__.load({
         const ids = (jarDeps?.found ?? []).map((item) => item.projectId).filter(Boolean);
         if (ids.length === 0 || !targetMc) return;
         try {
-          await post('/api/mods/install-batch', { projectIds: ids, mcVersion: targetMc, loader: loader ?? 'fabric' });
-          setNotice(`已开始安装 ${ids.length} 个前置，进度看上面的进度条`);
+          // targetLoader 是当前选中实例的加载器（这里以前误写成未定义的 loader，点了会直接报错）
+          await post('/api/mods/install-batch', {
+            projectIds: ids,
+            mcVersion: targetMc,
+            loader: targetLoader ?? 'fabric',
+            ...(targetLoader ? { instance: version } : {}),
+          });
+          setNotice(
+            `已开始安装 ${ids.length} 个前置到 ${targetLoader ? version : `fabric-${targetMc}-mods`}，进度看上面的进度条`,
+          );
         } catch (err) {
           setNotice(err.message);
         }
@@ -1330,7 +1346,9 @@ window.__ModuleLoader__.load({
           h(
             'p',
             { style: { ...S.hint, margin: '0 0 10px' } },
-            '搜 Modrinth 直接装：模组装到 fabric-<版本>-mods，整合包会自己建实例，光影装到当前实例。装之前会先查冲突和前置。',
+            targetLoader
+              ? `搜 Modrinth 直接装：模组装进当前实例 ${version}（${targetLoader}），整合包会自己建实例，光影装到当前实例。装之前会先查冲突和前置。`
+              : '搜 Modrinth 直接装：原版实例装模组会自动建 fabric-<版本>-mods 实例；整合包会自己建实例，光影装到当前实例。装之前会先查冲突和前置。',
           ),
           h(ModLibrary, {
             instanceId: version,
