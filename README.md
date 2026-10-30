@@ -48,6 +48,8 @@ node bin/mcl.mjs launch 1.20.1 --user 你的名字 --memory 4G
 
 也可以装成命令：`npm link` 之后直接用 `mcl`。
 
+每次改动后实际跑过的验证记录在 [`docs/verification.md`](docs/verification.md)。
+
 ## 图形界面
 
 ```bash
@@ -93,10 +95,34 @@ mcl gui                 # 或直接 mcl
 | `mcl doctor`                   | 自检（Node / 系统 / 下载源 / Java）                                |
 
 启动参数：`--user`、`--memory`、`--width`、`--height`、`--dry-run`、`--detach`、`--auth`。
+通用参数：`--source auto|mojang|bmclapi`（默认 `auto`）、`--force`。
 
-|                      |        |                                 |
-| -------------------- | ------ | ------------------------------- |
-| 通用参数：\`--source auto | mojang | bmclapi`（默认 `auto`）、`--force\`。 |
+装模组 / 整合包时可以带 `--loader fabric|forge|neoforge`（默认 fabric）和 `--instance <实例名>`
+（不指定实例时按加载器自动准备一个）。
+
+## 在 DSH 里用（插件）
+
+仓库里的 `dsh-plugin/` 是配套的 DSH 插件：右下角浮窗（安装 / 启动进度、日志、内存、登录、崩溃诊断），
+设置页里管版本与模组库。插件不需要额外配置，装上就能用本机的启动器。
+
+1. 把仓库放在插件能找到的位置（插件默认找 `~/mc-launcher`，或用环境变量指定：
+
+```bash
+git clone https://github.com/end876/dsh-mcl ~/mc-launcher
+set MCL_HOME=D:\path\to\mc-launcher     # 放别处时用这个
+```
+
+2. 把 `dsh-plugin/` 放进 DSH profile 的 `node_modules/`（包名 `@local/dsh-mc-launcher`），在 profile 的
+   `cordis.patch.yml` 里挂一条：
+
+```yaml
+- insert:
+    - id: mc-launcher
+      name: '@local/dsh-mc-launcher'
+```
+
+插件会自己拉起 `bin/mcl.mjs`；启动器已经在跑就复用 `~/.mcl/server.json` 里记录的端口（动态端口 51730~51749）。
+插件自己的说明见 [`dsh-plugin/README.md`](dsh-plugin/README.md)。
 
 ## 目录布局（与主流启动器兼容）
 
