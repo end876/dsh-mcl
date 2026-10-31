@@ -243,6 +243,82 @@ window.__ModuleLoader__.load({
       return { state: snapshot.state, error: snapshot.error, reload: refreshLauncher };
     }
 
+
+    /* ---------- 主题：跟随启动器外观设置（A 深海 / B 像素 / C 极简） ---------- */
+    const THEME_TOKENS = {
+      minimal: {
+        '--dsw-alias-bg-base': '#f5f6f8',
+        '--dsw-alias-bg-layer-1': '#ffffff',
+        '--dsw-alias-bg-layer-2': '#fafbfc',
+        '--dsw-alias-bg-overlay': 'rgba(255,255,255,0.98)',
+        '--dsw-alias-border-l1': '#e6e8ec',
+        '--dsw-alias-border-l2': '#eef0f3',
+        '--dsw-alias-label-primary': '#111418',
+        '--dsw-alias-label-secondary': '#6b7280',
+        '--dsw-alias-label-tertiary': '#9aa1ab',
+        '--dsw-alias-brand-primary': '#2f6bff',
+        '--dsw-alias-state-success-primary': '#22c55e',
+        '--dsw-alias-state-warn-primary': '#f59e0b',
+        '--dsw-alias-state-error-primary': '#ef4444',
+        '--dsw-alias-state-idle-primary': '#9aa1ab',
+      },
+      deepsea: {
+        '--dsw-alias-bg-base': '#071627',
+        '--dsw-alias-bg-layer-1': '#0d2436',
+        '--dsw-alias-bg-layer-2': 'rgba(255,255,255,0.04)',
+        '--dsw-alias-bg-overlay': 'rgba(10,30,46,0.98)',
+        '--dsw-alias-border-l1': 'rgba(120,200,255,0.16)',
+        '--dsw-alias-border-l2': 'rgba(120,200,255,0.10)',
+        '--dsw-alias-label-primary': '#e8f4ff',
+        '--dsw-alias-label-secondary': '#8fb3cc',
+        '--dsw-alias-label-tertiary': '#6f93ac',
+        '--dsw-alias-brand-primary': '#4fd1ff',
+        '--dsw-alias-state-success-primary': '#46e6a8',
+        '--dsw-alias-state-warn-primary': '#ffd166',
+        '--dsw-alias-state-error-primary': '#ff7b7b',
+        '--dsw-alias-state-idle-primary': '#557a8e',
+      },
+      pixel: {
+        '--dsw-alias-bg-base': '#2b2622',
+        '--dsw-alias-bg-layer-1': '#3a332c',
+        '--dsw-alias-bg-layer-2': '#332c26',
+        '--dsw-alias-bg-overlay': 'rgba(58,51,44,0.98)',
+        '--dsw-alias-border-l1': '#191511',
+        '--dsw-alias-border-l2': '#2a241e',
+        '--dsw-alias-label-primary': '#f2e9d8',
+        '--dsw-alias-label-secondary': '#c9bba4',
+        '--dsw-alias-label-tertiary': '#a9977c',
+        '--dsw-alias-brand-primary': '#8fc257',
+        '--dsw-alias-state-success-primary': '#7ee06a',
+        '--dsw-alias-state-warn-primary': '#ffc94d',
+        '--dsw-alias-state-error-primary': '#ff6b5e',
+        '--dsw-alias-state-idle-primary': '#7a6a55',
+      },
+    };
+
+    function themeVars(theme) {
+      return THEME_TOKENS[theme] ?? THEME_TOKENS.minimal;
+    }
+
+    /** 读一次外观设置（主题改得很少，挂载时读一次就够；浮窗隐藏会卸载，再显示会重读） */
+    function useLauncherTheme() {
+      const [theme, setTheme] = useState('minimal');
+      useEffect(() => {
+        let alive = true;
+        api('/api/ui/appearance')
+          .then((data) => {
+            if (alive && data && THEME_TOKENS[data.theme]) setTheme(data.theme);
+          })
+          .catch(() => {
+            /* 服务没起来就用默认主题 */
+          });
+        return () => {
+          alive = false;
+        };
+      }, []);
+      return THEME_TOKENS[theme] ? theme : 'minimal';
+    }
+
     /* ---------- 事件流：安装/启动进度、登录结果都从 /api/events 拿 ---------- */
 
     const evStore = {
@@ -1112,6 +1188,7 @@ window.__ModuleLoader__.load({
       const { state, error, reload } = useLauncher();
       const events = useEvents();
       const job = runningJob(events);
+      const theme = useLauncherTheme();
       const [version, setVersion] = useState('');
       const [player, setPlayer] = useState(() => readPref('mcl.player', 'Player'));
       const [memory, setMemory] = useState(() => readPref('mcl.memory', '2G'));
@@ -1312,7 +1389,7 @@ window.__ModuleLoader__.load({
 
       return h(
         'div',
-        { style: S.page },
+        { style: { ...S.page, ...themeVars(theme) } },
         h(
           'div',
           null,
@@ -1683,6 +1760,7 @@ window.__ModuleLoader__.load({
 
     function PanelBody() {
       const embedded = useEmbedded();
+      const theme = useLauncherTheme();
       const { state, error, reload } = useLauncher();
       const events = useEvents();
       const job = runningJob(events);
@@ -2172,7 +2250,7 @@ window.__ModuleLoader__.load({
       if (collapsed) {
         return h(
           'div',
-          { ref: panelRef, style: shell },
+          { ref: panelRef, style: { ...shell, ...themeVars(theme) } },
           header,
           h(
             'div',
@@ -2279,7 +2357,7 @@ window.__ModuleLoader__.load({
 
       return h(
         'div',
-        { ref: panelRef, style: shell },
+        { ref: panelRef, style: { ...shell, ...themeVars(theme) } },
         header,
         h(
           'div',

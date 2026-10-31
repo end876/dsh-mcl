@@ -26,7 +26,7 @@
 | `package.json` | 包信息、`dsh.bundle` / `dsh.client` 声明 |
 | `cordis.patch.yml` | 往 profile 插入 `mc-launcher` 这个 Loader 条目 |
 | `index.js` | Host 半边：只负责“保证启动器服务在跑”，进程生命周期 |
-| `client.js` | Client 半边：设置页区块 + 可拖动浮窗（全部界面在这里） |
+| `client.js` | Client 半边：设置页区块 + 可拖动浮窗（全部界面在这里；配色跟随启动器「外观」的 A/B/C 主题） |
 | `locale/zh.json` `locale/en.json` | 插件列表里的名称与描述 |
 | `icon.svg` | 插件图标 |
 
