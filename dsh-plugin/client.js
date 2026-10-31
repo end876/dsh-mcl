@@ -22,36 +22,53 @@ window.__ModuleLoader__.load({
 
     /** 这个端口上跑的是不是我们的启动器 */
     async function probePort(port, timeoutMs = 1500) {
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const controller = new AbortController();
-        const timer = window.setTimeout(() => controller.abort(), timeoutMs);
         const res = await fetch(`${originFor(port)}/api/state`, { signal: controller.signal });
-        window.clearTimeout(timer);
         if (!res.ok) return false;
         const body = await res.json().catch(() => null);
         return Boolean(body && Array.isArray(body.versions));
       } catch {
         return false;
+      } finally {
+        window.clearTimeout(timer);
       }
     }
 
-    /** 找启动器端口：先用上次记住的，不行就按范围扫 */
+    let portPromise = null;
+
+    /** 找启动器端口：先用上次记住的，不行就按范围扫（并发调用只扫一次） */
     async function resolvePort() {
       if (portReady) return resolvedPort;
+      if (portPromise) return portPromise;
+      portPromise = discoverPort().finally(() => {
+        portPromise = null;
+      });
+      return portPromise;
+    }
+
+    async function discoverPort() {
       if (await probePort(resolvedPort)) {
         portReady = true;
         return resolvedPort;
       }
+      const candidates = [];
       for (let offset = 0; offset < PORT_SCAN; offset += 1) {
         const port = DEFAULT_PORT + offset;
-        if (port === resolvedPort) continue;
-        if (await probePort(port)) {
-          resolvedPort = port;
-          portReady = true;
-          writePref(PORT_KEY, String(port));
-          reconnectEvents(); // 端口换了，SSE 也要重连
-          return port;
-        }
+        if (port !== resolvedPort) candidates.push(port);
+      }
+      // 并行探：最坏情况从 20×1.5s 串行降到一次 800ms 超时
+      const hits = await Promise.all(
+        candidates.map((port) => probePort(port, 800).then((ok) => (ok ? port : 0))),
+      );
+      const found = hits.find(Boolean);
+      if (found) {
+        resolvedPort = found;
+        portReady = true;
+        writePref(PORT_KEY, String(found));
+        reconnectEvents(); // 端口换了，SSE 也要重连
+        return found;
       }
       return null;
     }
@@ -59,12 +76,17 @@ window.__ModuleLoader__.load({
     async function api(path, init) {
       const port = await resolvePort();
       if (!port) throw new Error('启动器服务未启动');
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 15000);
       let res;
       try {
-        res = await fetch(`${originFor(port)}${path}`, init);
+        res = await fetch(`${originFor(port)}${path}`, { ...init, signal: controller.signal });
       } catch (error) {
         portReady = false; // 端口可能变了，下次重新找
+        if (error?.name === 'AbortError') throw new Error('启动器响应超时（15 秒）');
         throw error;
+      } finally {
+        window.clearTimeout(timer);
       }
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
@@ -157,6 +179,8 @@ window.__ModuleLoader__.load({
       if (typeof document !== 'undefined' && document.hidden && Date.now() - store.lastAt < 14000) {
         return store.state;
       }
+      const beforeState = store.state;
+      const beforeError = store.error;
       store.inflight = true;
       try {
         const next = await api('/api/state');
@@ -174,7 +198,8 @@ window.__ModuleLoader__.load({
         store.error = err.message;
       } finally {
         store.inflight = false;
-        notify();
+        // 状态引用没变、错误也没变，就不用惊动订阅者
+        if (store.state !== beforeState || store.error !== beforeError) notify();
       }
       return store.state;
     }
@@ -244,6 +269,31 @@ window.__ModuleLoader__.load({
       }
     }
 
+    // 日志行很密：合并到下一帧统一通知（最多 ~16ms 一次）
+    let evNotifyHandle = 0;
+    let evNotifyIsFrame = false;
+    function evNotifySoon() {
+      if (evNotifyHandle) return;
+      const run = () => {
+        evNotifyHandle = 0;
+        evNotify();
+      };
+      if (typeof requestAnimationFrame === 'function') {
+        evNotifyIsFrame = true;
+        evNotifyHandle = requestAnimationFrame(run);
+      } else {
+        evNotifyIsFrame = false;
+        evNotifyHandle = window.setTimeout(run, 80);
+      }
+    }
+    function flushEvNotify() {
+      if (!evNotifyHandle) return;
+      if (evNotifyIsFrame) cancelAnimationFrame(evNotifyHandle);
+      else window.clearTimeout(evNotifyHandle);
+      evNotifyHandle = 0;
+      evNotify();
+    }
+
     function handleEvent(payload) {
       if (!payload || typeof payload !== 'object') return;
       if (payload.type === 'line') {
@@ -253,7 +303,7 @@ window.__ModuleLoader__.load({
           list.push(String(payload.line ?? ''));
           if (list.length > 80) list.splice(0, list.length - 80);
           evStore.lines[kind] = list;
-          evNotify();
+          evNotifySoon();
         }
         return;
       }
@@ -267,6 +317,7 @@ window.__ModuleLoader__.load({
             evStore.jobs[kind] = { status: payload.status, meta: payload.meta ?? null };
           }
         }
+        flushEvNotify();
         evNotify();
         if (payload.status !== 'running') refreshLauncher();
         return;
@@ -274,6 +325,7 @@ window.__ModuleLoader__.load({
       if (payload.type === 'auth') {
         // 带上到达时间：面板只认「本次登录发起之后」的事件，避免上一次的结果把新面板顶掉
         evStore.auth = { ...payload, at: Date.now() };
+        flushEvNotify();
         evNotify();
         refreshLauncher();
         return;
@@ -671,6 +723,7 @@ window.__ModuleLoader__.load({
       const loadingRef = useRef(false);
       const listEndRef = useRef(null);
       const seenIdsRef = useRef(new Set());
+      const searchSeqRef = useRef(0); // 每次搜索一个序号，过期响应直接丢弃
       const [loadingMore, setLoadingMore] = useState(false);
       const [hasMore, setHasMore] = useState(false);
 
@@ -679,9 +732,11 @@ window.__ModuleLoader__.load({
           setError('这个实例识别不出 Minecraft 版本，先在「启动游戏」里选一个具体版本');
           return;
         }
-        if (loadingRef.current) return; // 滚动、按钮、观察器可能同时触发，只放一个进去
-        loadingRef.current = true;
         const first = nextOffset === 0;
+        // 只挡「翻页」：换页签/换关键词的首页请求要能打断旧请求，否则新页签会一直空着
+        if (!first && loadingRef.current) return;
+        const seq = ++searchSeqRef.current;
+        loadingRef.current = true;
         if (first) setBusy(true);
         else setLoadingMore(true);
         setError('');
@@ -690,6 +745,7 @@ window.__ModuleLoader__.load({
           if (mc) payload.mcVersion = mc;
           if (tab === 'mod' && loader) payload.loader = loader;
           const data = await post('/api/search', payload);
+          if (seq !== searchSeqRef.current) return; // 页面已经切走/换了关键词，这份结果作废
           const next = data.hits ?? [];
           const total = Number(data.total ?? next.length) || 0;
           setTotal(total);
@@ -710,12 +766,15 @@ window.__ModuleLoader__.load({
           // 这一页没新东西 / 已经到总数 → 没有下一页了（也别让观察器空转）
           setHasMore(added > 0 && loaded < total);
         } catch (err) {
+          if (seq !== searchSeqRef.current) return;
           setError(err.message);
           if (first) setHasMore(false);
         } finally {
-          loadingRef.current = false;
-          setBusy(false);
-          setLoadingMore(false);
+          if (seq === searchSeqRef.current) {
+            loadingRef.current = false;
+            setBusy(false);
+            setLoadingMore(false);
+          }
         }
       }
 
@@ -1163,6 +1222,13 @@ window.__ModuleLoader__.load({
         setModName(file.name);
         setModInfo(null);
         setJarDeps(null);
+        // 大文件 base64 会变成 1.4 倍大小、整段塞进 JSON：插件这边没有路径识别，先拦住
+        if (file.size > 24 * 1024 * 1024) {
+          setNotice(
+            `文件 ${(file.size / 1024 / 1024).toFixed(0)}MB 太大，插件里传不动；请用独立窗口的「浏览…」（走本地路径识别）`,
+          );
+          return;
+        }
         try {
           const dataUrl = await new Promise((resolve, reject) => {
             const reader = new FileReader();

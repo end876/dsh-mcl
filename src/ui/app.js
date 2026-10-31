@@ -605,7 +605,7 @@ function escapeHtml(text) {
 
 /* ---------- 模组库抽屉 ---------- */
 
-const drawer = { kind: 'mod', hits: [], selected: new Set(), analysis: null, filter: '', offset: 0, total: 0, loading: false, mc: '1.20.1' };
+const drawer = { kind: 'mod', hits: [], selected: new Set(), analysis: null, filter: '', offset: 0, total: 0, loading: false, mc: '1.20.1', seq: 0 };
 
 function drawerOpen(kind) {
   drawer.kind = kind || 'mod';
@@ -643,6 +643,8 @@ const CAT_ZH = {
 const zhCat = (name) => CAT_ZH[name] || name;
 
 async function doDrawerSearch() {
+  drawer.seq += 1; // 旧的请求就算回来了也丢掉
+  drawer.loading = false; // 别让旧请求的 loading 拦住这次搜索
   drawer.mc = (ui.drawerMc.value || '1.20.1').trim();
   drawer.hits = [];
   drawer.analysis = null;
@@ -655,6 +657,7 @@ async function doDrawerSearch() {
 
 /** 取下一页并追加（滚到底自动触发） */
 async function loadMore() {
+  const seq = drawer.seq;
   if (drawer.loading) return;
   if (drawer.total > 0 && drawer.hits.length >= drawer.total) return;
   drawer.loading = true;
@@ -674,6 +677,7 @@ async function loadMore() {
         offset: drawer.offset,
       }),
     });
+    if (seq !== drawer.seq) return; // 搜索条件已经变了，这份结果作废
     drawer.total = data.total ?? 0;
     const fresh = data.hits ?? [];
     drawer.offset += fresh.length;
@@ -692,9 +696,11 @@ async function loadMore() {
   } catch (error) {
     ui.drawerList.insertAdjacentHTML('beforeend', `<p class="hint">加载失败：${escapeHtml(error.message)}</p>`);
   } finally {
-    drawer.loading = false;
-    updateDrawerFoot();
-    ensureDrawerFilled();
+    if (seq === drawer.seq) {
+      drawer.loading = false;
+      updateDrawerFoot();
+      ensureDrawerFilled();
+    }
   }
 }
 

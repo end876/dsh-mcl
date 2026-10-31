@@ -64,10 +64,10 @@ function candidatePorts() {
 }
 
 async function findRunningPort() {
-  for (const port of candidatePorts()) {
-    if (await probePort(port)) return port;
-  }
-  return null;
+  // 并行探，别一个个等超时（服务没起来时串行要 20 多秒）
+  const ports = candidatePorts();
+  const hits = await Promise.all(ports.map((port) => probePort(port).then((ok) => (ok ? port : 0))));
+  return hits.find(Boolean) ?? null;
 }
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -129,7 +129,13 @@ export function apply(ctx) {
       if (child === spawned) child = null;
     });
 
+    // 活过一分钟说明这次是正常起来的，把重启额度还回去
+    const stableTimer = setTimeout(() => {
+      if (child === spawned) restarts = 0;
+    }, 60_000);
+
     spawned.on('exit', (code) => {
+      clearTimeout(stableTimer);
       if (child !== spawned) return;
       child = null;
       if (disposed) return;
