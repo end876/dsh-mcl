@@ -39,6 +39,7 @@ const ui = {
   msaStatus: $('#msa-status'),
   msaClose: $('#msa-close'),
   btnMsa: $('#btn-msa'),
+  btnLogout: $('#btn-logout'),
   btnOpenLibrary: $('#btn-open-library'),
   drawer: $('#drawer'),
   drawerMask: $('#drawer-mask'),
@@ -219,10 +220,15 @@ function renderLaunchState() {
   const { selected, running, installing } = store.state;
   ui.btnLaunch.disabled = !selected || running || installing;
   ui.btnStop.hidden = !running;
+  const auth = store.state.auth;
+  const who =
+    auth?.loggedIn && !auth.expired
+      ? `正版账号 ${auth.name}`
+      : `离线玩家 ${ui.inputUser.value || 'Player'}`;
   ui.launchHint.textContent = running
     ? '游戏正在运行…'
     : selected
-      ? `将启动 ${selected}（离线玩家 ${ui.inputUser.value || 'Player'}）`
+      ? `将启动 ${selected}（${who}）`
       : '先选一个版本';
   renderQuickLaunch();
 }
@@ -478,10 +484,27 @@ async function startMsaLogin() {
 async function refreshAuth() {
   try {
     const auth = await api('/api/auth/status');
+    store.state.auth = auth;
     ui.btnMsa.textContent = auth.loggedIn ? `${auth.name} · 已登录` : '微软登录';
     ui.btnMsa.dataset.loggedIn = auth.loggedIn ? '1' : '';
+    ui.btnMsa.title = auth.loggedIn ? '已用正版账号登录，点击可重新登录' : '微软设备码登录（不接触账号密码）';
+    if (ui.btnLogout) ui.btnLogout.hidden = !auth.loggedIn;
+    renderLaunchState();
   } catch {
     ui.btnMsa.textContent = '微软登录';
+    ui.btnMsa.dataset.loggedIn = '';
+    if (ui.btnLogout) ui.btnLogout.hidden = true;
+  }
+}
+
+async function logout() {
+  try {
+    await api('/api/auth/logout', { method: 'POST' });
+    toast('已退出正版账号，将使用离线身份启动');
+    await refreshAuth();
+    await refresh();
+  } catch (error) {
+    toast(`退出失败：${error.message}`, true);
   }
 }
 
@@ -1084,6 +1107,7 @@ function bindEvents() {
   ui.btnInspectPath.addEventListener('click', inspectPath);
   ui.btnPickFile.addEventListener('click', pickFileFromSystem);
   ui.btnMsa.addEventListener('click', startMsaLogin);
+  ui.btnLogout?.addEventListener('click', logout);
   ui.msaClose.addEventListener('click', () => {
     ui.msaBox.hidden = true;
   });
@@ -1137,6 +1161,21 @@ function bindEvents() {
       }
       return;
     }
+    if (data.type === 'auth') {
+      const ok = data.status === 'ok';
+      if (ui.msaStatus) {
+        ui.msaStatus.textContent = ok ? `登录成功：${data.name}` : `登录失败：${data.message}`;
+      }
+      if (ok) {
+        toast(`正版登录成功：${data.name}`);
+        ui.msaBox.hidden = true;
+        refresh().catch(() => {});
+      } else {
+        toast(`登录失败：${data.message}`, true);
+      }
+      refreshAuth().catch(() => {});
+      return;
+    }
     if (data.type === 'refresh') refresh().catch(() => {});
   };
 }
@@ -1151,6 +1190,7 @@ async function main() {
 
   setKind('mod');
   bindEvents();
+  await refreshAuth();
   await refresh();
   await loadRemote();
 }

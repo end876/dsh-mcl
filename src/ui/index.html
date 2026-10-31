@@ -52,7 +52,10 @@
             <div class="fields">
               <label><span>玩家名</span><input id="input-user" type="text" value="Player" maxlength="16" spellcheck="false" /></label>
               <label class="msa-label"><span>正版账号</span>
-                <button type="button" class="ghost" id="btn-msa">微软登录</button>
+                <div class="msa-row">
+                  <button type="button" class="ghost" id="btn-msa">微软登录</button>
+                  <button type="button" class="ghost" id="btn-logout" hidden>退出登录</button>
+                </div>
               </label>
               <label class="memory-field">
                 <span>内存 <b id="memory-label">2 G</b></span>

@@ -240,6 +240,10 @@ body[data-bg="image"] .rail-show { background: rgba(var(--glass-rgb, 12, 20, 30)
 .fields b { color: var(--text); }
 .memory-field { grid-column: span 2; }
 .memory-line { display: flex; gap: 8px; align-items: center; }
+.msa-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.msa-row .ghost { flex: 1; min-width: 96px; }
+#btn-msa[data-logged-in="1"] { color: var(--ok); border-color: var(--ok); background: transparent; }
+#btn-msa[data-logged-in="1"]:hover { border-color: var(--ok); }
 .actions { display: flex; gap: 10px; margin-top: 16px; align-items: center; }
 .quick-launch { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .quick-launch .chip { cursor: pointer; }
