@@ -256,9 +256,15 @@ function renderQuickLaunch() {
 
 async function refresh() {
   const state = await api('/api/state');
-  const selected = state.versions.some((v) => v.id === store.state.selected)
+  let selected = state.versions.some((v) => v.id === store.state.selected)
     ? store.state.selected
     : (state.versions[0]?.id ?? null);
+  // 本地整合包装完之后，自动选到新实例上
+  if (store.pendingSelect && state.versions.some((v) => v.id === store.pendingSelect)) {
+    selected = store.pendingSelect;
+    savePrefs({ selected });
+    store.pendingSelect = null;
+  }
   store.state = { ...state, selected };
   renderVersions();
   renderLaunchState();
@@ -602,6 +608,37 @@ function renderInspect(info, file) {
     const need = document.createElement('p');
     need.textContent = '下一步：为对应版本安装加载器后，把 jar 放进「版本目录/mods」即可。';
     ui.result.appendChild(need);
+  }
+  if (info.kind === 'modpack' && info.format === 'CurseForge') {
+    const instanceName = String(file.name ?? '').replace(/\.(zip|mrpack)$/i, '') || '整合包';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'primary';
+    btn.style.marginTop = '10px';
+    btn.textContent = `安装为实例「${instanceName}」`;
+    btn.addEventListener('click', async () => {
+      if (!lastInspectPath) {
+        toast('请先用「浏览…」选一次文件，浏览器拿不到完整路径', true);
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = '正在加入安装队列…';
+      try {
+        await api('/api/pack/import-local', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: lastInspectPath, name: instanceName }),
+        });
+        store.pendingSelect = instanceName;
+        toast(`开始安装「${instanceName}」，进度看下方日志`);
+      } catch (error) {
+        toast(`安装失败：${error.message}`, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = `安装为实例「${instanceName}」`;
+      }
+    });
+    ui.result.appendChild(btn);
   }
   if (info.kind === 'modpack' && String(info.hint ?? '').includes('解压即玩')) {
     const btn = document.createElement('button');

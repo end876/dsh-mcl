@@ -1103,6 +1103,21 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         return;
       }
 
+      if (route === '/api/pack/import-local' && req.method === 'POST') {
+        const body = await readBody(req);
+        const target = String(body.path ?? '').trim();
+        if (!target) {
+          sendJson(res, 400, { error: '缺少整合包路径' });
+          return;
+        }
+        const name = String(body.name ?? '').trim();
+        runJob('install', ['importpack', target, ...(name ? ['--name', name] : [])], {
+          version: name || path.basename(target),
+        });
+        sendJson(res, 200, { ok: true, name });
+        return;
+      }
+
       if (route === '/api/shader/install' && req.method === 'POST') {
         const body = await readBody(req);
         const projectId = String(body.projectId ?? '').trim();

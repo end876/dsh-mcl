@@ -12,6 +12,7 @@ import { installLoader, listLoaderVersions, detectLoader as detectLoaderId, load
 import { installMod, installModpack, installModsBatch } from '../src/modrinth.mjs';
 import { scanAll, scanInstance } from '../src/dupes.mjs';
 import { importArchive } from '../src/import.mjs';
+import { importModpackZip } from '../src/importpack.mjs';
 import { diagnoseSummary } from '../src/diagnose.mjs';
 import { ensureFreshAuth, loadAuth, loginWithDeviceCode } from '../src/auth.mjs';
 import { fmtBytes, c, info, ok, fail, say, step, warn } from '../src/log.mjs';
@@ -355,6 +356,18 @@ async function cmdDiagnose(positional) {
   say();
 }
 
+async function cmdImportPack(positional, flags) {
+  const target = positional[1] ?? positional[2];
+  if (!target) throw new Error('用法：mcl importpack <整合包zip路径> [--name 实例名]');
+  const cleaned = String(target).replace(/^["'“”「」]+|["'“”「」]+$/g, '');
+  const result = await importModpackZip(cleaned, {
+    name: typeof flags.name === 'string' && flags.name ? flags.name : undefined,
+  });
+  say();
+  info(`实例：${result.instance}（Minecraft ${result.mcVersion} / ${result.loader}）`);
+  info(`现在可以启动：mcl launch "${result.instance}"`);
+}
+
 async function cmdImport(positional) {
   const target = positional[1] ?? positional[2];
   if (!target) throw new Error('用法：mcl import <整合包zip路径>');
@@ -418,6 +431,10 @@ async function main() {
       break;
     case 'import':
       await cmdImport(positional);
+      break;
+    case 'importpack':
+    case 'packinstall':
+      await cmdImportPack(positional, flags);
       break;
     case 'diagnose':
     case 'why':
