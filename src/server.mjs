@@ -176,6 +176,36 @@ function isPidAlive(pid) {
   }
 }
 
+// PID 会被系统回收复用（昨天退出的 8780 今天可能是 svchost）：
+// 光判断「PID 存在」不够，Windows 上还要确认它还是不是 java 进程。
+const pidProbeCache = new Map();
+const PID_PROBE_TTL = 3000;
+
+async function probeProcess(pid) {
+  const value = Number(pid);
+  if (!Number.isFinite(value) || value <= 0) return { alive: false, image: null };
+  const cached = pidProbeCache.get(value);
+  if (cached && Date.now() - cached.at < PID_PROBE_TTL) return { alive: cached.alive, image: cached.image };
+
+  let alive = isPidAlive(value);
+  let image = null;
+  if (alive && process.platform === 'win32') {
+    const out = await runCommand('tasklist', ['/FI', `PID eq ${value}`, '/FO', 'CSV', '/NH']);
+    const line = out
+      .split(/\r?\n/)
+      .map((row) => row.trim())
+      .find((row) => row.startsWith('"'));
+    if (!line) {
+      alive = false;
+    } else {
+      image = (line.match(/^"([^"]+)"/)?.[1] ?? '').toLowerCase();
+      if (!image.includes('java')) alive = false; // 被复用成别的进程了
+    }
+  }
+  pidProbeCache.set(value, { at: Date.now(), alive, image });
+  return { alive, image };
+}
+
 function runCommand(cmd, args) {
   return new Promise((resolve) => {
     execFile(cmd, args, { windowsHide: true, timeout: 5000 }, (error, stdout) => {
@@ -450,7 +480,8 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
     if (!dir) return null;
     const record = readRuntimeRecord(dir);
     if (!record) return null;
-    const alive = isPidAlive(record.pid);
+    // stopped:true 是启动器亲眼看到退出后写的，优先级最高；没标记再验 PID 身份
+    const alive = record.stopped ? false : (await probeProcess(record.pid)).alive;
     const startedAt = record.startedAt ? Date.parse(record.startedAt) : null;
     return {
       instance,
@@ -462,6 +493,7 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
       startedAt: record.startedAt ?? null,
       uptimeSec: alive && Number.isFinite(startedAt) ? Math.max(0, Math.round((Date.now() - startedAt) / 1000)) : null,
       alive,
+      state: alive ? 'running' : record.stopped ? 'exited' : 'unknown',
       rssMb: alive ? await processMemoryMb(record.pid) : null,
       stopped: Boolean(record.stopped),
       exitCode: record.exitCode ?? null,
@@ -631,9 +663,9 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         const candidates = [path.join(dir, 'logs', 'latest.log'), path.join(dir, 'launcher-console.log')];
         const source = candidates.find((file) => fs.existsSync(file)) ?? null;
         const tail = source ? readTailLines(source, { lines: limit }) : { lines: [], size: 0, mtime: 0, truncated: false };
-        // 这里只需要"在不在跑"，不要为了内存数字再起 tasklist
+        // 这里只需要"在不在跑"：stopped 优先，再用 tasklist 确认 PID 没被复用
         const record = readRuntimeRecord(dir);
-        const alive = record ? isPidAlive(record.pid) : false;
+        const alive = record ? !record.stopped && (await probeProcess(record.pid)).alive : false;
         sendJson(res, 200, {
           instance: wanted,
           dir,
@@ -832,7 +864,8 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
           // 命令行 / 别处启动的游戏：按运行时快照里的 pid 收掉
           const dir = lastLaunched ? safeVersionDir(lastLaunched) : null;
           const record = dir ? readRuntimeRecord(dir) : null;
-          if (record?.pid && isPidAlive(record.pid)) {
+          const probe = record?.pid ? await probeProcess(record.pid) : { alive: false };
+          if (record?.pid && !record.stopped && probe.alive) {
             try {
               if (process.platform === 'win32') {
                 spawn('taskkill', ['/pid', String(record.pid), '/T', '/F'], { windowsHide: true });
@@ -840,6 +873,7 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
                 process.kill(record.pid, 'SIGTERM');
               }
               stopped = true;
+              pidProbeCache.set(Number(record.pid), { at: Date.now(), alive: false, image: null });
               memCache = { pid: 0, at: 0, value: null };
             } catch {
               /* ignore */

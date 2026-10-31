@@ -225,11 +225,15 @@ function renderLaunchState() {
     auth?.loggedIn && !auth.expired
       ? `正版账号 ${auth.name}`
       : `离线玩家 ${ui.inputUser.value || 'Player'}`;
+  const runtime = store.state.runtime;
+  const exitCode = runtime?.exitCode;
   ui.launchHint.textContent = running
     ? '游戏正在运行…'
-    : selected
-      ? `将启动 ${selected}（${who}）`
-      : '先选一个版本';
+    : runtime?.state === 'exited'
+      ? `上一局已退出${Number.isFinite(exitCode) ? `（退出码 ${exitCode}）` : ''}，可以再次启动`
+      : selected
+        ? `将启动 ${selected}（${who}）`
+        : '先选一个版本';
   renderQuickLaunch();
 }
 
@@ -400,8 +404,9 @@ async function doLaunch() {
 
 async function doStop() {
   try {
-    await api('/api/stop', { method: 'POST' });
-    toast('已请求停止');
+    const result = await api('/api/stop', { method: 'POST' });
+    if (result?.ok === false) toast('当前没有正在运行的游戏');
+    else toast('已请求停止');
   } catch (error) {
     toast(error.message, true);
   }
