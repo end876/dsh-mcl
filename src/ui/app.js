@@ -151,7 +151,8 @@ function renderVersions() {
   for (const [group, list] of groupIds(versions.map((v) => v.id))) {
     const details = document.createElement('details');
     details.className = 'group';
-    details.open = false;
+    // 默认展开包含当前选中版本的分组，省得找
+    details.open = Boolean(selected && list.includes(selected));
 
     const summary = document.createElement('summary');
     summary.innerHTML = `${group} <span class="count">${list.length}</span>`;

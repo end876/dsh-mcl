@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { GAME_DIR, ROOT, VERSIONS_DIR, isInside } from './paths.mjs';
-import { fetchJson } from './http.mjs';
+import { fetchJson, sha1Hex } from './http.mjs';
 import { findVersionDir, installedVersions, readLocalVersionJson } from './install.mjs';
 import { RUNTIME_NAME } from './launch.mjs';
 import { listJava } from './java.mjs';
@@ -21,6 +21,82 @@ import { searchProjects, analyzeProjects, installModsBatch, getProjectDetail, in
 
 const UI_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui');
 const CLI = path.join(ROOT, 'bin', 'mcl.mjs');
+
+// ── 外观：主题 + 背景图（存 ~/.mcl/ui/，浏览器版和 DSH 插件共用）──
+const UI_HOME = path.join(os.homedir(), '.mcl', 'ui');
+const APPEARANCE_FILE = path.join(UI_HOME, 'appearance.json');
+const APPEARANCE_DEFAULTS = {
+  theme: 'minimal',
+  preset: 'dark',
+  blur: 8,
+  dim: 35,
+  glass: 62,
+  pos: 30,
+  bgFile: '',
+  bgMime: '',
+  bgVersion: '',
+  bgEnabled: true,
+};
+const APPEARANCE_THEMES = new Set(['minimal', 'deepsea', 'pixel']);
+const APPEARANCE_PRESETS = new Set(['light-fog', 'deepsea', 'gradient', 'dark']);
+const BG_MIME_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+
+function clampInt(value, min, max, fallback) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(num)));
+}
+
+function readAppearance() {
+  let doc = {};
+  try {
+    doc = JSON.parse(fs.readFileSync(APPEARANCE_FILE, 'utf8')) || {};
+  } catch {
+    /* 没配置就是默认外观 */
+  }
+  const appear = { ...APPEARANCE_DEFAULTS, ...doc };
+  if (!APPEARANCE_THEMES.has(appear.theme)) appear.theme = APPEARANCE_DEFAULTS.theme;
+  if (!APPEARANCE_PRESETS.has(appear.preset)) appear.preset = APPEARANCE_DEFAULTS.preset;
+  appear.blur = clampInt(appear.blur, 0, 30, APPEARANCE_DEFAULTS.blur);
+  appear.dim = clampInt(appear.dim, 0, 80, APPEARANCE_DEFAULTS.dim);
+  appear.glass = clampInt(appear.glass, 30, 95, APPEARANCE_DEFAULTS.glass);
+  appear.pos = clampInt(appear.pos, 0, 100, APPEARANCE_DEFAULTS.pos);
+  const bgPath = appear.bgFile ? path.join(UI_HOME, appear.bgFile) : '';
+  const hasFile = Boolean(bgPath && fs.existsSync(bgPath));
+  return {
+    ...appear,
+    hasFile,
+    hasBg: hasFile && appear.bgEnabled !== false,
+    bgPath,
+  };
+}
+
+function writeAppearance(next) {
+  fs.mkdirSync(UI_HOME, { recursive: true });
+  const tmp = `${APPEARANCE_FILE}.tmp`;
+  const { bgPath, hasBg, ...rest } = next;
+  fs.writeFileSync(tmp, `${JSON.stringify(rest, null, 2)}\n`);
+  fs.renameSync(tmp, APPEARANCE_FILE);
+}
+
+/** 读原始请求体（图片上传用） */
+function readRawBody(req, limit = 16 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        reject(new Error('图片太大（上限 16MB）'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
 
 /** MCL_LOG_HTTP=1 时把每个请求记一行，排查前端到底加载了哪版 bundle */
 const HTTP_LOG = process.env.MCL_LOG_HTTP ? path.join(ROOT, 'tmp', 'http-requests.log') : null;
@@ -516,7 +592,7 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         serveStatic(res, path.join(UI_DIR, 'index.html'));
         return;
       }
-      if (route === '/app.js' || route === '/style.css') {
+      if (route === '/app.js' || route === '/appearance.js' || route === '/style.css') {
         serveStatic(res, path.join(UI_DIR, route.slice(1)));
         return;
       }
@@ -604,6 +680,101 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         });
         sendJson(res, 200, { ok: true });
         return;
+      }
+
+      // ── 外观配置（主题 / 背景样式 / 滑杆）──
+      if (route === '/api/ui/appearance') {
+        if (req.method === 'GET') {
+          const { bgPath, ...appear } = readAppearance();
+          sendJson(res, 200, appear);
+          return;
+        }
+        if (req.method === 'POST') {
+          const body = await readBody(req);
+          const current = readAppearance();
+          const next = { ...current };
+          if (APPEARANCE_THEMES.has(String(body.theme))) next.theme = String(body.theme);
+          if (APPEARANCE_PRESETS.has(String(body.preset))) next.preset = String(body.preset);
+          if (body.blur !== undefined) next.blur = clampInt(body.blur, 0, 30, next.blur);
+          if (body.dim !== undefined) next.dim = clampInt(body.dim, 0, 80, next.dim);
+          if (body.glass !== undefined) next.glass = clampInt(body.glass, 30, 95, next.glass);
+          if (body.pos !== undefined) next.pos = clampInt(body.pos, 0, 100, next.pos);
+          if (body.bgEnabled !== undefined) next.bgEnabled = Boolean(body.bgEnabled);
+          writeAppearance(next);
+          const { bgPath, ...appear } = readAppearance();
+          sendJson(res, 200, { ok: true, ...appear });
+          return;
+        }
+      }
+
+      // ── 背景图（上传 / 读取 / 删除）──
+      if (route === '/api/ui/background') {
+        if (req.method === 'GET') {
+          const appear = readAppearance();
+          if (!appear.hasBg) {
+            sendJson(res, 404, { error: '还没有背景图' });
+            return;
+          }
+          try {
+            const buf = fs.readFileSync(appear.bgPath);
+            res.writeHead(200, {
+              ...res.cors,
+              'Content-Type': appear.bgMime || 'image/jpeg',
+              'Cache-Control': 'no-store',
+              'Content-Length': buf.length,
+            });
+            res.end(buf);
+          } catch {
+            sendJson(res, 404, { error: '背景图读不到' });
+          }
+          return;
+        }
+        if (req.method === 'POST') {
+          try {
+            const buf = await readRawBody(req);
+            const mime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+            const ext = BG_MIME_EXT[mime];
+            if (!ext) {
+              sendJson(res, 415, { error: '只支持 jpg / png / webp / gif' });
+              return;
+            }
+            if (buf.length < 64) {
+              sendJson(res, 400, { error: '图片内容是空的' });
+              return;
+            }
+            fs.mkdirSync(UI_HOME, { recursive: true });
+            const bgFile = `background.${ext}`;
+            fs.writeFileSync(path.join(UI_HOME, bgFile), buf);
+            // 换扩展名时把旧图删掉
+            const current = readAppearance();
+            if (current.bgFile && current.bgFile !== bgFile) {
+              try {
+                fs.rmSync(path.join(UI_HOME, current.bgFile), { force: true });
+              } catch {
+                /* ignore */
+              }
+            }
+            writeAppearance({ ...current, bgFile, bgMime: mime, bgVersion: sha1Hex(buf).slice(0, 12), bgEnabled: true });
+            const { bgPath, ...appear } = readAppearance();
+            sendJson(res, 200, { ok: true, version: appear.bgVersion, bytes: buf.length });
+          } catch (error) {
+            sendJson(res, 400, { error: String(error?.message ?? error) });
+          }
+          return;
+        }
+        if (req.method === 'DELETE') {
+          const current = readAppearance();
+          if (current.bgFile) {
+            try {
+              fs.rmSync(path.join(UI_HOME, current.bgFile), { force: true });
+            } catch {
+              /* ignore */
+            }
+          }
+          writeAppearance({ ...current, bgFile: '', bgMime: '', bgVersion: '' });
+          sendJson(res, 200, { ok: true });
+          return;
+        }
       }
 
       if (route === '/api/remote') {
