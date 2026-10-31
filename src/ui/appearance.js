@@ -129,7 +129,7 @@
   function setRail(on) {
     document.body.classList.toggle('rail-off', !on);
     try {
-      localStorage.setItem('mcl.rail', on ? 'on' : 'off');
+      localStorage.setItem('mcl.rail.v2', on ? 'on' : 'off');
     } catch {
       /* ignore */
     }
@@ -229,15 +229,17 @@
     });
 
     let savedPage = 'start';
-    let savedRail = 'on';
+    let savedRail = null;
     try {
       savedPage = localStorage.getItem('mcl.page') || 'start';
-      savedRail = localStorage.getItem('mcl.rail') || 'on';
+      savedRail = localStorage.getItem('mcl.rail.v2');
     } catch {
       /* ignore */
     }
     pageTo(savedPage);
-    setRail(savedRail !== 'off');
+    // 940 以下日志栏是浮层：没存过偏好时默认收起，免得一进来糊住内容
+    const firstNarrow = savedRail === null || savedRail === '';
+    setRail(firstNarrow && window.innerWidth < 940 ? false : savedRail !== 'off');
   }
 
   wire();

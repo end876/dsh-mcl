@@ -364,6 +364,12 @@ button { font: inherit; cursor: pointer; }
 
 /* ── 日志 ─────────────────────────────────────────── */
 .console-card { display: flex; flex-direction: column; min-height: 0; flex: 1; padding: 14px 16px; }
+#console:empty::before {
+  content: '还没有日志。\A安装或启动游戏后，这里会实时输出——点右上角「收起」可以把日志栏收起来。';
+  white-space: pre-wrap;
+  color: var(--muted, #8a93a0);
+}
+
 .console {
   flex: 1;
   min-height: 0;
@@ -657,10 +663,36 @@ body[data-theme="pixel"][data-bg="image"] .appearance-page {
 ::-webkit-scrollbar-thumb:hover { background: rgba(128, 140, 160, .55); border: 2px solid transparent; background-clip: content-box; }
 
 /* ── 窄窗口兜底 ───────────────────────────────────── */
+/* 1180 以下：收窄侧栏和日志栏，日志继续留在右侧（不再整块藏掉） */
 @media (max-width: 1180px) {
-  .app { grid-template-columns: 200px minmax(0, 1fr); }
-  .rail { display: none; }
-  .rail-show { display: block; }
+  .app { grid-template-columns: 196px minmax(0, 1fr) 300px; }
+  body.rail-off .app { grid-template-columns: 196px minmax(0, 1fr); }
+  .rail { padding: 14px 14px 16px 0; }
+  .rail-show { display: none; }
+  body.rail-off .rail-show { display: block; }
+}
+@media (max-width: 1060px) {
+  .app { grid-template-columns: 176px minmax(0, 1fr) 280px; }
+  body.rail-off .app { grid-template-columns: 176px minmax(0, 1fr); }
+  .main { padding: 14px 16px 16px; }
+}
+/* 940 以下：日志栏变成右侧浮层，右侧「日志」标签负责开关 */
+@media (max-width: 940px) {
+  .app { grid-template-columns: 176px minmax(0, 1fr); }
+  body.rail-off .app { grid-template-columns: 176px minmax(0, 1fr); }
+  .rail {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(84vw, 330px);
+    z-index: 45;
+    padding: 12px;
+    background: var(--panel);
+    backdrop-filter: blur(20px);
+    box-shadow: -18px 0 44px rgba(0, 0, 0, 0.28);
+  }
+  body.rail-off .rail { display: none; }
 }
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }
