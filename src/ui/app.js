@@ -417,11 +417,26 @@ function setKind(kind) {
 
 async function inspectFile(file) {
   if (!file) return;
-  // 大文件浏览器读不动（1.4GB 的整合包读出来是空字符串），走本地路径识别
-  if (file.size > 48 * 1024 * 1024) {
-    toast(`${(file.size / 1024 / 1024).toFixed(0)}MB 太大，浏览器拿不到完整路径，请用系统对话框选择`, true);
-    ui.dropText.textContent = '大文件请用「浏览…」选择';
-    pickFileFromSystem();
+  // 大文件走原始字节流上传（不经过 base64，几百 MB 的整合包也能识别）
+  if (file.size > 8 * 1024 * 1024) {
+    ui.dropText.textContent = `正在读取 ${file.name}（${(file.size / 1024 / 1024).toFixed(0)}MB）…`;
+    try {
+      const res = await fetch('/api/mod/inspect-file', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-File-Name': encodeURIComponent(file.name),
+        },
+        body: file,
+      });
+      const info = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(info.error || `HTTP ${res.status}`);
+      lastInspectPath = '';
+      renderInspect(info, file);
+    } catch (error) {
+      ui.dropText.textContent = '识别失败，试试用下面的路径识别';
+      toast(`识别失败：${error.message}`, true);
+    }
     return;
   }
   ui.dropText.textContent = `正在识别 ${file.name}…`;

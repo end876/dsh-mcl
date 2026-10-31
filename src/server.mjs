@@ -872,6 +872,64 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         return;
       }
 
+      if (route === '/api/mod/inspect-file' && req.method === 'POST') {
+        // 几百 MB 的整合包走原始字节流：不经过 base64/JSON，也不受 readBody 的 96MB 限制
+        const rawName = String(req.headers['x-file-name'] ?? 'upload.zip');
+        let name = 'upload.zip';
+        try {
+          name = decodeURIComponent(rawName) || 'upload.zip';
+        } catch {
+          name = 'upload.zip';
+        }
+        name = path.basename(name).slice(0, 160) || 'upload.zip';
+        const tmp = path.join(
+          os.tmpdir(),
+          `mcl-inspect-${Date.now()}-${Math.random().toString(16).slice(2)}.bin`,
+        );
+        const MAX = 4 * 1024 * 1024 * 1024;
+        let size = 0;
+        try {
+          await new Promise((resolve, reject) => {
+            const out = fs.createWriteStream(tmp);
+            let done = false;
+            const fail = (error) => {
+              if (done) return;
+              done = true;
+              try {
+                out.destroy();
+              } catch {
+                /* ignore */
+              }
+              reject(error);
+            };
+            req.on('data', (chunk) => {
+              size += chunk.length;
+              if (size > MAX) {
+                req.destroy();
+                fail(new Error('文件太大（超过 4GB）'));
+              }
+            });
+            req.on('aborted', () => fail(new Error('上传中断')));
+            req.on('error', fail);
+            out.on('error', fail);
+            out.on('finish', () => {
+              if (done) return;
+              done = true;
+              resolve();
+            });
+            req.pipe(out);
+          });
+          const buffer = fs.readFileSync(tmp);
+          const result = inspectArchive(buffer, name);
+          sendJson(res, 200, result);
+        } catch (error) {
+          sendJson(res, 400, { error: error.message });
+        } finally {
+          fs.promises.unlink(tmp).catch(() => {});
+        }
+        return;
+      }
+
       if (route === '/api/mod/inspect' && req.method === 'POST') {
         const body = await readBody(req);
         const data = String(body.data ?? '');

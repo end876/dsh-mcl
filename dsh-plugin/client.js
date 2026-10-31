@@ -93,6 +93,34 @@ window.__ModuleLoader__.load({
       return body;
     }
 
+    /** 大文件用原始字节流（几百 MB 的整合包 base64 会卡死界面） */
+    async function apiUpload(path, file) {
+      const port = await resolvePort();
+      if (!port) throw new Error('启动器服务未启动');
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 180000);
+      let res;
+      try {
+        res = await fetch(`${originFor(port)}${path}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-File-Name': encodeURIComponent(file.name),
+          },
+          body: file,
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (error?.name === 'AbortError') throw new Error('识别超时（180 秒）');
+        throw error;
+      } finally {
+        window.clearTimeout(timer);
+      }
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      return body;
+    }
+
     function post(path, payload) {
       return api(path, {
         method: 'POST',
@@ -1299,22 +1327,21 @@ window.__ModuleLoader__.load({
         setModName(file.name);
         setModInfo(null);
         setJarDeps(null);
-        // 大文件 base64 会变成 1.4 倍大小、整段塞进 JSON：插件这边没有路径识别，先拦住
-        if (file.size > 24 * 1024 * 1024) {
-          setNotice(
-            `文件 ${(file.size / 1024 / 1024).toFixed(0)}MB 太大，插件里传不动；请用独立窗口的「浏览…」（走本地路径识别）`,
-          );
-          return;
-        }
+        const bigFile = file.size > 8 * 1024 * 1024;
         try {
-          const dataUrl = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = () => reject(new Error('读取文件失败'));
-            reader.readAsDataURL(file);
-          });
-          const data = String(dataUrl).split(',')[1] || '';
-          const info = await post('/api/mod/inspect', { name: file.name, data });
+          let info;
+          if (bigFile) {
+            info = await apiUpload('/api/mod/inspect-file', file);
+          } else {
+            const dataUrl = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = () => reject(new Error('读取文件失败'));
+              reader.readAsDataURL(file);
+            });
+            const data = String(dataUrl).split(',')[1] || '';
+            info = await post('/api/mod/inspect', { name: file.name, data });
+          }
           setModInfo(info);
           // 本地 jar 里写着它依赖哪些 mod：拿去 Modrinth 反查，能装的就给按钮
           const depIds = (info.depends ?? []).map((dep) => dep.id).filter(Boolean);

@@ -299,7 +299,11 @@ function buildHint(info) {
 
   if (info.kind === 'modpack') {
     const loader = info.loader ? info.loaderLabel : '原版';
-    return `这是 ${info.format} 整合包，本体是 ${loader} ${mcText === 'Minecraft' ? '' : mcText}`.replace('  ', ' ');
+    const base = `这是 ${info.format} 整合包，本体是 ${loader} ${mcText === 'Minecraft' ? '' : mcText}`.replace('  ', ' ');
+    if (info.format === 'CurseForge') {
+      return `${base}。启动器暂不自动下载 CurseForge 模组：可以用 CurseForge 客户端安装，或解压后把 overrides 里的配置拷进对应实例`;
+    }
+    return base;
   }
 
   const loader = info.loaderLabel;
