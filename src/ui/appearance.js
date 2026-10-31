@@ -110,12 +110,29 @@
     apply();
   }
 
-  function openPanel(open) {
-    const panel = $('#appearance-panel');
-    const mask = $('#appearance-mask');
-    if (!panel || !mask) return;
-    panel.hidden = !open;
-    mask.hidden = !open;
+  function pageTo(page) {
+    const known = ['start', 'versions', 'library', 'appearance'];
+    const target = known.includes(page) ? page : 'start';
+    for (const button of document.querySelectorAll('.nav-item[data-page]')) {
+      button.classList.toggle('active', button.dataset.page === target);
+    }
+    for (const section of document.querySelectorAll('.page')) {
+      section.classList.toggle('active', section.dataset.page === target);
+    }
+    try {
+      localStorage.setItem('mcl.page', target);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function setRail(on) {
+    document.body.classList.toggle('rail-off', !on);
+    try {
+      localStorage.setItem('mcl.rail', on ? 'on' : 'off');
+    } catch {
+      /* ignore */
+    }
   }
 
   async function uploadBackground(file) {
@@ -153,9 +170,11 @@
   }
 
   function wire() {
-    $('#btn-appearance')?.addEventListener('click', () => openPanel(true));
-    $('#ap-close')?.addEventListener('click', () => openPanel(false));
-    $('#appearance-mask')?.addEventListener('click', () => openPanel(false));
+    for (const button of document.querySelectorAll('.nav-item[data-page]')) {
+      button.addEventListener('click', () => pageTo(button.dataset.page));
+    }
+    $('#btn-rail-hide')?.addEventListener('click', () => setRail(false));
+    $('#btn-rail-show')?.addEventListener('click', () => setRail(true));
 
     for (const button of document.querySelectorAll('#ap-themes [data-theme]')) {
       button.addEventListener('click', () => save({ theme: button.dataset.theme }));
@@ -209,16 +228,16 @@
       save({ ...DEFAULTS });
     });
 
-    for (const button of document.querySelectorAll('[data-jump]')) {
-      button.addEventListener('click', () => {
-        for (const item of document.querySelectorAll('[data-jump]')) item.classList.toggle('active', item === button);
-        document.getElementById(button.dataset.jump)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
+    let savedPage = 'start';
+    let savedRail = 'on';
+    try {
+      savedPage = localStorage.getItem('mcl.page') || 'start';
+      savedRail = localStorage.getItem('mcl.rail') || 'on';
+    } catch {
+      /* ignore */
     }
-
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') openPanel(false);
-    });
+    pageTo(savedPage);
+    setRail(savedRail !== 'off');
   }
 
   wire();

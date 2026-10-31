@@ -182,6 +182,39 @@ body[data-theme="pixel"] {
   flex-direction: column;
   min-height: 0;
 }
+.rail-actions { display: flex; gap: 8px; }
+body.rail-off .rail { display: none; }
+body.rail-off .app { grid-template-columns: 224px minmax(0, 1fr); }
+.rail-show {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 30;
+  display: none;
+  padding: 14px 8px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  box-shadow: var(--shadow);
+  writing-mode: vertical-rl;
+  letter-spacing: 3px;
+  backdrop-filter: blur(14px);
+}
+body.rail-off .rail-show { display: block; }
+body[data-bg="image"] .rail-show { background: rgba(var(--glass-rgb, 12, 20, 30), var(--glass-alpha, .62)); border-color: var(--glass-line, rgba(255,255,255,.18)); backdrop-filter: blur(var(--glass-blur, 16px)); }
+
+.page { display: none; flex-direction: column; gap: 16px; min-height: 0; }
+.page.active { display: flex; flex: 1 1 auto; }
+/* 版本 / 模组库页：卡片自然高度，列表过长的部分自己滚 */
+.page[data-page="versions"] .groups { max-height: 420px; }
+.page[data-page="library"] #sec-library { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.page[data-page="library"] .drop { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 120px; }
+.page[data-page="library"] .result { max-height: 320px; overflow: auto; }
+.recent-card .quick-launch { margin-top: 4px; }
 
 /* ── 卡片 ─────────────────────────────────────────── */
 .card {
@@ -466,20 +499,7 @@ body[data-theme="pixel"] .mod-tag { border-radius: 0; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 /* ── 外观面板 ─────────────────────────────────────── */
-.appearance-mask { position: fixed; inset: 0; z-index: 80; background: rgba(4, 8, 16, .45); }
-.appearance {
-  position: fixed; z-index: 81; right: 24px; top: 24px; bottom: 24px;
-  width: min(420px, calc(100vw - 40px));
-  overflow: auto;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, .4);
-  padding: 18px 20px;
-  backdrop-filter: blur(24px);
-}
-.ap-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-.ap-head h3 { font-size: 15px; }
+.appearance-page { max-width: 760px; }
 .ap-group { margin-bottom: 16px; }
 .ap-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
 .ap-row { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -502,7 +522,6 @@ body[data-theme="pixel"] .mod-tag { border-radius: 0; }
 
 /* ── 背景模式下的玻璃化 ───────────────────────────── */
 body[data-bg="image"] .card,
-body[data-bg="image"] .appearance,
 body[data-bg="image"] .dialog,
 body[data-bg="image"] .drawer,
 body[data-bg="image"] .msa-box,
@@ -608,7 +627,7 @@ body[data-theme="pixel"][data-bg="image"] .card,
 body[data-theme="pixel"][data-bg="image"] .side,
 body[data-theme="pixel"][data-bg="image"] .drawer,
 body[data-theme="pixel"][data-bg="image"] .dialog,
-body[data-theme="pixel"][data-bg="image"] .appearance {
+body[data-theme="pixel"][data-bg="image"] .appearance-page {
   --glass-alpha: .94;
   --glass-blur: 0px;
   --glass-rgb: 58, 51, 44;
@@ -637,6 +656,7 @@ body[data-theme="pixel"][data-bg="image"] .appearance {
 @media (max-width: 1180px) {
   .app { grid-template-columns: 200px minmax(0, 1fr); }
   .rail { display: none; }
+  .rail-show { display: block; }
 }
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }
