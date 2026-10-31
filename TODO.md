@@ -64,6 +64,11 @@
 - [x] 搜索结果加 `categoriesZh`（中文分类，顺带过滤 loader 名噪音）
 - [x] CLI 帮助补上 `mcl mods`（批量装模组）
 
+### 0.6.1（2026-10-31）
+
+- [x] 模组库无限下拉（IntersectionObserver，滚到底自动加载；每页 20、按 id 去重）
+- [x] 切页签/换实例自动重置并搜第一页；总数对不上时不再空转
+
 ### 0.6.0（2026-10-30）
 
 - [x] **Quilt 支持**：`src/quilt.mjs`（maven 元数据挑稳定版 → 并发探测 profile json → 下载依赖）

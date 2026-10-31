@@ -666,30 +666,86 @@ window.__ModuleLoader__.load({
       const [review, setReview] = useState(null);
       const [confirming, setConfirming] = useState(false);
 
+      const PAGE = 20;
       const disabled = Boolean(busyOuter) || busy || !mc;
+      const loadingRef = useRef(false);
+      const listEndRef = useRef(null);
+      const seenIdsRef = useRef(new Set());
+      const [loadingMore, setLoadingMore] = useState(false);
+      const [hasMore, setHasMore] = useState(false);
 
       async function runSearch(nextOffset = 0) {
         if (!mc) {
           setError('这个实例识别不出 Minecraft 版本，先在「启动游戏」里选一个具体版本');
           return;
         }
-        setBusy(true);
+        if (loadingRef.current) return; // 滚动、按钮、观察器可能同时触发，只放一个进去
+        loadingRef.current = true;
+        const first = nextOffset === 0;
+        if (first) setBusy(true);
+        else setLoadingMore(true);
         setError('');
         try {
-          const payload = { query, type: tab, limit: 8, offset: nextOffset };
+          const payload = { query, type: tab, limit: PAGE, offset: nextOffset };
           if (mc) payload.mcVersion = mc;
           if (tab === 'mod' && loader) payload.loader = loader;
           const data = await post('/api/search', payload);
           const next = data.hits ?? [];
-          setHits((prev) => (nextOffset === 0 ? next : [...prev, ...next]));
-          setOffset(nextOffset);
-          setTotal(data.total ?? next.length);
+          const total = Number(data.total ?? next.length) || 0;
+          setTotal(total);
+          let added = 0;
+          if (first) {
+            seenIdsRef.current = new Set(next.map((hit) => hit.id));
+            added = next.length;
+            setHits(next);
+          } else {
+            // 去重：服务端 offset 抖动/重复返回同一页时不至于把列表撑爆
+            const fresh = next.filter((hit) => !seenIdsRef.current.has(hit.id));
+            for (const hit of fresh) seenIdsRef.current.add(hit.id);
+            added = fresh.length;
+            if (fresh.length > 0) setHits((prev) => [...prev, ...fresh]);
+          }
+          const loaded = nextOffset + next.length;
+          setOffset(loaded);
+          // 这一页没新东西 / 已经到总数 → 没有下一页了（也别让观察器空转）
+          setHasMore(added > 0 && loaded < total);
         } catch (err) {
           setError(err.message);
+          if (first) setHasMore(false);
         } finally {
+          loadingRef.current = false;
           setBusy(false);
+          setLoadingMore(false);
         }
       }
+
+      // 滚到列表末尾自动加载下一页（和 PCL 一样，不用再点按钮）
+      useEffect(() => {
+        const node = listEndRef.current;
+        if (!node || typeof IntersectionObserver === 'undefined') return undefined;
+        const observer = new IntersectionObserver(
+          (entries) => {
+            if (!entries.some((entry) => entry.isIntersecting)) return;
+            if (!hasMore || loadingRef.current || disabled) return;
+            runSearch(offset);
+          },
+          { root: null, rootMargin: '400px 0px', threshold: 0 },
+        );
+        observer.observe(node);
+        return () => observer.disconnect();
+      }, [hasMore, offset, disabled, tab, query, mc, loader]);
+
+      // 切页签或换了实例：清空列表，自动搜第一页（原版/PCL 都是打开就有内容）
+      useEffect(() => {
+        setHits([]);
+        setOffset(0);
+        setTotal(0);
+        setHasMore(false);
+        setReview(null);
+        setConfirming(false);
+        if (mc) runSearch(0);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [tab, mc]);
 
       function togglePick(id) {
         setPicked((prev) => {
@@ -843,7 +899,7 @@ window.__ModuleLoader__.load({
           ? h(
               'div',
               { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)' } },
-              `共 ${fmtCount(total)} 个结果，这次显示 ${hits.length} 个`,
+              `共 ${fmtCount(total)} 个结果，已加载 ${hits.length} 个`,
             )
           : null,
 
@@ -900,13 +956,34 @@ window.__ModuleLoader__.load({
           ),
         ),
 
-        hits.length > 0 && hits.length < total
+        hits.length > 0
+          ? h(
+              'div',
+              {
+                ref: listEndRef,
+                style: {
+                  padding: '10px 0 2px',
+                  textAlign: 'center',
+                  fontSize: 12,
+                  color: 'var(--dsw-alias-label-secondary)',
+                },
+              },
+              loadingMore
+                ? '加载更多…'
+                : hasMore
+                  ? '继续下拉，自动加载更多'
+                  : `没有更多了（共 ${fmtCount(total)} 个）`,
+            )
+          : null,
+
+        // 老环境没有 IntersectionObserver 时，留个手动按钮兜底
+        typeof IntersectionObserver === 'undefined' && hits.length > 0 && hasMore
           ? h(
               'div',
               { style: S.row },
               h(
                 'button',
-                { type: 'button', style: { ...S.ghost, fontSize: 12 }, onClick: () => runSearch(offset + 8), disabled: disabled },
+                { type: 'button', style: { ...S.ghost, fontSize: 12 }, onClick: () => runSearch(offset), disabled },
                 '加载更多',
               ),
             )
