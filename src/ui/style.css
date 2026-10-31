@@ -402,9 +402,19 @@ button { font: inherit; cursor: pointer; }
 }
 .drop.over { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .path-row { display: flex; gap: 8px; margin-top: 10px; }
-.result { margin-top: 12px; font-size: 12px; }
-.result-head { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.result {
+  margin-top: 12px;
+  padding: 12px 14px;
+  font-size: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.result-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
 .result-name { font-weight: 600; }
+.kv { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 8px; color: var(--muted); }
+.kv span { white-space: nowrap; }
+.result p { margin: 6px 0 0; line-height: 1.6; color: var(--muted); }
 
 /* ── 日志 ─────────────────────────────────────────── */
 .console-card { display: flex; flex-direction: column; min-height: 0; flex: 1; padding: 14px 16px; }
@@ -587,6 +597,11 @@ body[data-bg="image"] .picker-pop {
 }
 body[data-bg="image"] .side { background: rgba(var(--glass-rgb, 12, 20, 30), calc(var(--glass-alpha, .62) * .7)); }
 body[data-bg="image"] .console { background: rgba(0, 0, 0, .22); }
+body[data-bg="image"] .logdock {
+  background: rgba(var(--glass-rgb, 12, 20, 30), var(--glass-alpha, .62));
+  border-top-color: var(--glass-line, rgba(255, 255, 255, .18));
+  backdrop-filter: blur(var(--glass-blur, 16px));
+}
 
 /* 预设：亮雾（浅色蒙版 + 白玻璃 + 深色字） */
 body[data-bg="image"][data-preset="light-fog"] {
