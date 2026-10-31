@@ -659,15 +659,29 @@ async function loadMore() {
       renderDrawerRows();
       if (fresh.length > 0) analyzeInBackground(drawer.mc, fresh.map((hit) => hit.id));
     } else {
-      // 后续页：只追加，避免整列表重建（O(n²)）
-      appendDrawerRows(fresh);
+      // 后续页：只追加，避免整列表重建（O(n²)）；有分类筛选时追加前先过一遍
+      const visible = drawer.filter
+        ? fresh.filter((hit) => (hit.categories ?? []).map(zhCat).includes(drawer.filter))
+        : fresh;
+      appendDrawerRows(visible);
     }
   } catch (error) {
     ui.drawerList.insertAdjacentHTML('beforeend', `<p class="hint">加载失败：${escapeHtml(error.message)}</p>`);
   } finally {
     drawer.loading = false;
     updateDrawerFoot();
+    ensureDrawerFilled();
   }
+}
+
+/** 第一页没把容器撑满（没有滚动条）时继续拉：否则用户没有“滚到底”的机会 */
+function ensureDrawerFilled() {
+  if (drawer.loading) return;
+  if (drawer.total > 0 && drawer.hits.length >= drawer.total) return;
+  if (drawer.hits.length === 0 || drawer.hits.length >= 800) return; // 兜底：别无限灌
+  const scroller = ui.drawerList.closest('.drawer-body') || ui.drawerList;
+  if (!scroller) return;
+  if (scroller.scrollHeight <= scroller.clientHeight + 120) loadMore();
 }
 
 async function analyzeInBackground(mc, ids) {
@@ -1015,8 +1029,10 @@ function bindEvents() {
   ui.drawerSort.addEventListener('change', doDrawerSearch);
   ui.drawerClose.addEventListener('click', drawerClose);
   ui.drawerMask.addEventListener('click', drawerClose);
-  // 滚到底部自动加载下一页
-  const scroller = ui.drawerList.parentElement;
+  // 滚到底部自动加载下一页。
+  // #drawer-list 自己就是 .drawer-body（滚动容器），以前写成 parentElement 挂到了不滚动的
+  // <section class="drawer"> 上，所以滚到底永远不触发。
+  const scroller = ui.drawerList.closest('.drawer-body') || ui.drawerList;
   if (scroller) {
     scroller.addEventListener('scroll', () => {
       if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 260) loadMore();
