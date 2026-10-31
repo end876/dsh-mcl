@@ -111,7 +111,7 @@
   }
 
   function pageTo(page) {
-    const known = ['start', 'versions', 'library', 'appearance'];
+    const known = ['start', 'versions', 'library', 'log', 'appearance'];
     const target = known.includes(page) ? page : 'start';
     for (const button of document.querySelectorAll('.nav-item[data-page]')) {
       button.classList.toggle('active', button.dataset.page === target);
@@ -119,6 +119,12 @@
     for (const section of document.querySelectorAll('.page')) {
       section.classList.toggle('active', section.dataset.page === target);
     }
+    // 同一个控制台节点在「底部日志栏」和「日志独立页」之间移动，日志内容不丢
+    const consoleEl = document.querySelector('#console');
+    const slot =
+      target === 'log' ? document.querySelector('#logpage-slot') : document.querySelector('#dock-body');
+    if (consoleEl && slot && consoleEl.parentElement !== slot) slot.appendChild(consoleEl);
+    document.body.classList.toggle('log-page', target === 'log');
     try {
       localStorage.setItem('mcl.page', target);
     } catch {
@@ -126,10 +132,12 @@
     }
   }
 
-  function setRail(on) {
-    document.body.classList.toggle('rail-off', !on);
+  function setDock(open) {
+    document.body.classList.toggle('dock-closed', !open);
+    const toggle = document.querySelector('#dock-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     try {
-      localStorage.setItem('mcl.rail.v2', on ? 'on' : 'off');
+      localStorage.setItem('mcl.dock', open ? 'open' : 'closed');
     } catch {
       /* ignore */
     }
@@ -173,8 +181,9 @@
     for (const button of document.querySelectorAll('.nav-item[data-page]')) {
       button.addEventListener('click', () => pageTo(button.dataset.page));
     }
-    $('#btn-rail-hide')?.addEventListener('click', () => setRail(false));
-    $('#btn-rail-show')?.addEventListener('click', () => setRail(true));
+    $('#dock-toggle')?.addEventListener('click', () => {
+      setDock(document.body.classList.contains('dock-closed'));
+    });
 
     for (const button of document.querySelectorAll('#ap-themes [data-theme]')) {
       button.addEventListener('click', () => save({ theme: button.dataset.theme }));
@@ -229,17 +238,15 @@
     });
 
     let savedPage = 'start';
-    let savedRail = null;
+    let savedDock = null;
     try {
       savedPage = localStorage.getItem('mcl.page') || 'start';
-      savedRail = localStorage.getItem('mcl.rail.v2');
+      savedDock = localStorage.getItem('mcl.dock');
     } catch {
       /* ignore */
     }
     pageTo(savedPage);
-    // 940 以下日志栏是浮层：没存过偏好时默认收起，免得一进来糊住内容
-    const firstNarrow = savedRail === null || savedRail === '';
-    setRail(firstNarrow && window.innerWidth < 940 ? false : savedRail !== 'off');
+    setDock(savedDock !== 'closed');
   }
 
   wire();

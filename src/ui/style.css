@@ -134,8 +134,15 @@ body[data-theme="pixel"] {
 /* ── 布局 ─────────────────────────────────────────── */
 .app {
   display: grid;
-  grid-template-columns: 224px minmax(0, 1fr) 340px;
+  grid-template-columns: 224px minmax(0, 1fr);
   gap: 0;
+  height: 100vh;
+}
+.work {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   height: 100vh;
 }
 .side {
@@ -169,43 +176,80 @@ body[data-theme="pixel"] {
 .side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 
 .main {
+  flex: 1;
   min-width: 0;
-  padding: 18px 26px 22px;
+  min-height: 0;
+  padding: 18px 26px 18px;
   overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
-.rail {
-  padding: 18px 20px 22px 0;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.rail-actions { display: flex; gap: 8px; }
-body.rail-off .rail { display: none; }
-body.rail-off .app { grid-template-columns: 224px minmax(0, 1fr); }
-.rail-show {
-  position: fixed;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 30;
-  display: none;
-  padding: 14px 8px;
-  font-size: 12px;
-  color: var(--text);
+/* ── 底部运行日志 ─────────────────────────────── */
+.logdock {
+  --dock-h: 240px;
+  flex: none;
+  border-top: 1px solid var(--line);
   background: var(--panel);
-  border: 1px solid var(--line);
-  border-right: 0;
-  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
-  box-shadow: var(--shadow);
-  writing-mode: vertical-rl;
-  letter-spacing: 3px;
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(16px);
+  animation: dockIn 0.38s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
-body.rail-off .rail-show { display: block; }
-body[data-bg="image"] .rail-show { background: rgba(var(--glass-rgb, 12, 20, 30), var(--glass-alpha, .62)); border-color: var(--glass-line, rgba(255,255,255,.18)); backdrop-filter: blur(var(--glass-blur, 16px)); }
+@keyframes dockIn {
+  from { transform: translateY(28px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.dock-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 14px;
+}
+.dock-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+}
+.dock-title:hover { color: var(--accent); }
+.dock-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok, #38d39f);
+  box-shadow: 0 0 8px var(--ok, #38d39f);
+}
+.dock-caret { font-size: 10px; color: var(--muted); transition: transform 0.25s ease; }
+body.dock-closed .dock-caret { transform: rotate(-90deg); }
+.dock-actions { display: flex; gap: 6px; }
+.dock-actions .ghost { padding: 4px 10px; font-size: 11px; }
+.dock-body {
+  overflow: hidden;
+  max-height: var(--dock-h);
+  padding: 0 14px 12px;
+  transition: max-height 0.28s ease, padding 0.28s ease;
+}
+.dock-body .console {
+  height: calc(var(--dock-h) - 18px);
+  max-height: calc(var(--dock-h) - 18px);
+}
+body.dock-closed .dock-body { max-height: 0; padding-bottom: 0; }
+
+/* 日志独立页：底部日志栏让位，控制台移到页面里 */
+body.log-page .logdock { display: none; }
+.page[data-page="log"] .logpage { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.logpage-actions { display: flex; gap: 8px; }
+.logpage-body { flex: 1; min-height: 0; display: flex; }
+.logpage-body .console { flex: 1; height: auto; max-height: none; }
+
 
 .page { display: none; flex-direction: column; gap: 16px; min-height: 0; }
 .page.active { display: flex; flex: 1 1 auto; }
@@ -365,7 +409,7 @@ button { font: inherit; cursor: pointer; }
 /* ── 日志 ─────────────────────────────────────────── */
 .console-card { display: flex; flex-direction: column; min-height: 0; flex: 1; padding: 14px 16px; }
 #console:empty::before {
-  content: '还没有日志。\A安装或启动游戏后，这里会实时输出——点右上角「收起」可以把日志栏收起来。';
+  content: '还没有日志。\A安装或启动游戏后，这里会实时输出；点上面的「运行日志」可以收起或展开。';
   white-space: pre-wrap;
   color: var(--muted, #8a93a0);
 }
@@ -664,40 +708,16 @@ body[data-theme="pixel"][data-bg="image"] .appearance-page {
 
 /* ── 窄窗口兜底 ───────────────────────────────────── */
 /* 1180 以下：收窄侧栏和日志栏，日志继续留在右侧（不再整块藏掉） */
-@media (max-width: 1180px) {
-  .app { grid-template-columns: 196px minmax(0, 1fr) 300px; }
-  body.rail-off .app { grid-template-columns: 196px minmax(0, 1fr); }
-  .rail { padding: 14px 14px 16px 0; }
-  .rail-show { display: none; }
-  body.rail-off .rail-show { display: block; }
-}
-@media (max-width: 1060px) {
-  .app { grid-template-columns: 176px minmax(0, 1fr) 280px; }
-  body.rail-off .app { grid-template-columns: 176px minmax(0, 1fr); }
-  .main { padding: 14px 16px 16px; }
-}
-/* 940 以下：日志栏变成右侧浮层，右侧「日志」标签负责开关 */
-@media (max-width: 940px) {
-  .app { grid-template-columns: 176px minmax(0, 1fr); }
-  body.rail-off .app { grid-template-columns: 176px minmax(0, 1fr); }
-  .rail {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(84vw, 330px);
-    z-index: 45;
-    padding: 12px;
-    background: var(--panel);
-    backdrop-filter: blur(20px);
-    box-shadow: -18px 0 44px rgba(0, 0, 0, 0.28);
-  }
-  body.rail-off .rail { display: none; }
+@media (max-width: 1080px) {
+  .app { grid-template-columns: 190px minmax(0, 1fr); }
+  .main { padding: 14px 16px 14px; }
+  .logdock { --dock-h: 200px; }
 }
 @media (max-width: 860px) {
-  .app { grid-template-columns: 1fr; }
+  .app { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
   .side { flex-direction: row; align-items: center; border-right: 0; border-bottom: 1px solid var(--line); padding: 10px 14px; }
   .nav { flex-direction: row; flex-wrap: wrap; }
   .side-foot { flex-direction: row; margin: 0 0 0 auto; }
   .main { padding: 14px; }
+  .logdock { --dock-h: 160px; }
 }

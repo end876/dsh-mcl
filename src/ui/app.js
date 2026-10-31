@@ -1087,10 +1087,27 @@ function bindEvents() {
   document.addEventListener('mousedown', (event) => {
     if (!ui.picker.contains(event.target)) closePicker();
   });
-  ui.btnClear.addEventListener('click', () => {
-    ui.console.innerHTML = '';
-    store.lines = 0;
-  });
+  for (const button of document.querySelectorAll('[data-clear-log]')) {
+    button.addEventListener('click', () => {
+      ui.console.innerHTML = '';
+      store.lines = 0;
+    });
+  }
+  for (const button of document.querySelectorAll('[data-copy-log]')) {
+    button.addEventListener('click', async () => {
+      const text = ui.console.innerText.trim();
+      if (!text) {
+        toast('还没有日志可复制');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        toast('日志已复制');
+      } catch {
+        toast('复制失败，请手动选中日志', true);
+      }
+    });
+  }
   ui.inputUser.addEventListener('input', renderLaunchState);
   ui.inputMemory.addEventListener('input', updateMemoryUi);
   ui.memoryConfirm.addEventListener('click', () => {

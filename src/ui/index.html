@@ -6,7 +6,7 @@
     <title>MCL · Minecraft 启动器</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
-  <body data-theme="minimal" data-bg="none" data-preset="deepsea" class="rail-on">
+  <body data-theme="minimal" data-bg="none" data-preset="deepsea">
     <div class="bg" id="bg"></div>
 
     <div class="app">
@@ -32,6 +32,7 @@
           <button type="button" class="nav-item active" data-page="start">启动</button>
           <button type="button" class="nav-item" data-page="versions">版本</button>
           <button type="button" class="nav-item" data-page="library">模组库</button>
+          <button type="button" class="nav-item" data-page="log">日志</button>
           <button type="button" class="nav-item" data-page="appearance">外观</button>
         </nav>
 
@@ -41,164 +42,183 @@
         </div>
       </aside>
 
-      <main class="main">
-        <!-- 启动 -->
-        <section class="page active" data-page="start">
-          <section class="card hero" id="sec-launch">
-            <div class="hero-head">
-              <h2>启动游戏</h2>
-              <span class="muted" id="hero-hint">选一个版本，然后点启动</span>
-            </div>
-            <div class="fields">
-              <label><span>玩家名</span><input id="input-user" type="text" value="Player" maxlength="16" spellcheck="false" /></label>
-              <label class="msa-label"><span>正版账号</span>
-                <div class="msa-row">
-                  <button type="button" class="ghost" id="btn-msa">微软登录</button>
-                  <button type="button" class="ghost" id="btn-logout" hidden>退出登录</button>
+      <div class="work">
+        <main class="main">
+          <!-- 启动 -->
+          <section class="page active" data-page="start">
+            <section class="card hero" id="sec-launch">
+              <div class="hero-head">
+                <h2>启动游戏</h2>
+                <span class="muted" id="hero-hint">选一个版本，然后点启动</span>
+              </div>
+              <div class="fields">
+                <label><span>玩家名</span><input id="input-user" type="text" value="Player" maxlength="16" spellcheck="false" /></label>
+                <label class="msa-label"><span>正版账号</span>
+                  <div class="msa-row">
+                    <button type="button" class="ghost" id="btn-msa">微软登录</button>
+                    <button type="button" class="ghost" id="btn-logout" hidden>退出登录</button>
+                  </div>
+                </label>
+                <label class="memory-field">
+                  <span>内存 <b id="memory-label">2 G</b></span>
+                  <div class="memory-line">
+                    <input id="input-memory" type="range" min="1" max="16" step="1" value="2" />
+                    <button class="primary small" id="memory-confirm" hidden>确定</button>
+                  </div>
+                </label>
+                <label><span>窗口宽</span><input id="input-width" type="number" value="854" min="320" max="3840" /></label>
+                <label><span>窗口高</span><input id="input-height" type="number" value="480" min="240" max="2160" /></label>
+              </div>
+              <div class="actions">
+                <button class="primary big" id="btn-launch" disabled>启 动 游 戏</button>
+                <button class="danger" id="btn-stop" hidden>停止</button>
+              </div>
+              <p class="hint" id="launch-hint">先选一个版本</p>
+            </section>
+
+            <section class="card recent-card">
+              <div class="card-head">
+                <h2>最近启动</h2>
+                <span class="muted">点一下直接启动</span>
+              </div>
+              <div class="quick-launch" id="quick-launch"></div>
+            </section>
+          </section>
+
+          <!-- 版本 -->
+          <section class="page" data-page="versions">
+            <section class="card" id="sec-versions">
+              <div class="card-head">
+                <h2>版本</h2>
+                <button class="ghost" id="btn-refresh">刷新</button>
+              </div>
+              <div class="groups" id="version-groups"></div>
+              <div class="empty" id="version-empty">还没有安装版本，下面选一个安装</div>
+              <div class="install-row">
+                <div class="picker" id="remote-picker">
+                  <button type="button" class="picker-btn" id="picker-btn" aria-haspopup="listbox">
+                    <span id="picker-label">选择版本</span><span class="caret"></span>
+                  </button>
+                  <div class="picker-pop" id="picker-pop" hidden>
+                    <input id="picker-search" type="text" placeholder="搜索版本…" />
+                    <div class="picker-list" id="picker-list"></div>
+                  </div>
                 </div>
+                <button class="primary" id="btn-install">安装</button>
+              </div>
+              <p class="hint">自动在官方源与镜像之间选较快的</p>
+            </section>
+          </section>
+
+          <!-- 模组库 -->
+          <section class="page" data-page="library">
+            <section class="card" id="sec-library">
+              <div class="card-head">
+                <h2>模组 / 整合包</h2>
+                <div class="tabs">
+                  <button class="tab active" data-kind="mod">模组</button>
+                  <button class="tab" data-kind="pack">整合包</button>
+                </div>
+              </div>
+              <button class="primary open-library" id="btn-open-library">打开模组库 · 浏览与一键下载</button>
+              <div class="divider">或直接选本地文件</div>
+              <label class="drop" id="drop">
+                <input type="file" id="file-input" hidden />
+                <span id="drop-text">拖入 .jar 或点击选择，自动识别需要的模组框架</span>
               </label>
-              <label class="memory-field">
-                <span>内存 <b id="memory-label">2 G</b></span>
-                <div class="memory-line">
-                  <input id="input-memory" type="range" min="1" max="16" step="1" value="2" />
-                  <button class="primary small" id="memory-confirm" hidden>确定</button>
-                </div>
-              </label>
-              <label><span>窗口宽</span><input id="input-width" type="number" value="854" min="320" max="3840" /></label>
-              <label><span>窗口高</span><input id="input-height" type="number" value="480" min="240" max="2160" /></label>
-            </div>
-            <div class="actions">
-              <button class="primary big" id="btn-launch" disabled>启 动 游 戏</button>
-              <button class="danger" id="btn-stop" hidden>停止</button>
-            </div>
-            <p class="hint" id="launch-hint">先选一个版本</p>
+              <div class="path-row">
+                <input id="inspect-path" type="text" placeholder="或粘贴本地文件路径（大整合包用这个）" />
+                <button class="ghost" id="btn-pick-file">浏览…</button>
+                <button class="ghost" id="btn-inspect-path">识别</button>
+              </div>
+              <div class="result" id="inspect-result" hidden></div>
+            </section>
           </section>
 
-          <section class="card recent-card">
-            <div class="card-head">
-              <h2>最近启动</h2>
-              <span class="muted">点一下直接启动</span>
-            </div>
-            <div class="quick-launch" id="quick-launch"></div>
-          </section>
-        </section>
-
-        <!-- 版本 -->
-        <section class="page" data-page="versions">
-          <section class="card" id="sec-versions">
-            <div class="card-head">
-              <h2>版本</h2>
-              <button class="ghost" id="btn-refresh">刷新</button>
-            </div>
-            <div class="groups" id="version-groups"></div>
-            <div class="empty" id="version-empty">还没有安装版本，下面选一个安装</div>
-            <div class="install-row">
-              <div class="picker" id="remote-picker">
-                <button type="button" class="picker-btn" id="picker-btn" aria-haspopup="listbox">
-                  <span id="picker-label">选择版本</span><span class="caret"></span>
-                </button>
-                <div class="picker-pop" id="picker-pop" hidden>
-                  <input id="picker-search" type="text" placeholder="搜索版本…" />
-                  <div class="picker-list" id="picker-list"></div>
+          <!-- 日志 -->
+          <section class="page" data-page="log">
+            <section class="card logpage">
+              <div class="card-head">
+                <h2>运行日志</h2>
+                <div class="logpage-actions">
+                  <button class="ghost small" data-copy-log>复制</button>
+                  <button class="ghost small" data-clear-log>清空</button>
                 </div>
               </div>
-              <button class="primary" id="btn-install">安装</button>
-            </div>
-            <p class="hint">自动在官方源与镜像之间选较快的</p>
+              <div class="logpage-body" id="logpage-slot"></div>
+            </section>
           </section>
-        </section>
 
-        <!-- 模组库 -->
-        <section class="page" data-page="library">
-          <section class="card" id="sec-library">
-            <div class="card-head">
-              <h2>模组 / 整合包</h2>
-              <div class="tabs">
-                <button class="tab active" data-kind="mod">模组</button>
-                <button class="tab" data-kind="pack">整合包</button>
+          <!-- 外观 -->
+          <section class="page" data-page="appearance">
+            <section class="card appearance-page">
+              <div class="card-head">
+                <h2>外观</h2>
+                <span class="muted" id="ap-status">背景图只存在本机。</span>
               </div>
-            </div>
-            <button class="primary open-library" id="btn-open-library">打开模组库 · 浏览与一键下载</button>
-            <div class="divider">或直接选本地文件</div>
-            <label class="drop" id="drop">
-              <input type="file" id="file-input" hidden />
-              <span id="drop-text">拖入 .jar 或点击选择，自动识别需要的模组框架</span>
-            </label>
-            <div class="path-row">
-              <input id="inspect-path" type="text" placeholder="或粘贴本地文件路径（大整合包用这个）" />
-              <button class="ghost" id="btn-pick-file">浏览…</button>
-              <button class="ghost" id="btn-inspect-path">识别</button>
-            </div>
-            <div class="result" id="inspect-result" hidden></div>
+
+              <div class="ap-group">
+                <span class="ap-label">主题</span>
+                <div class="ap-row" id="ap-themes">
+                  <button type="button" class="ap-card" data-theme="deepsea">A · 深海玻璃</button>
+                  <button type="button" class="ap-card" data-theme="pixel">B · 像素方块</button>
+                  <button type="button" class="ap-card active" data-theme="minimal">C · 极简白</button>
+                </div>
+              </div>
+
+              <div class="ap-group">
+                <span class="ap-label">背景图</span>
+                <div class="ap-row">
+                  <button type="button" class="ghost" id="ap-bg-none">无背景</button>
+                  <label class="ghost ap-upload">上传图片<input type="file" id="ap-bg-file" accept="image/*" hidden /></label>
+                  <button type="button" class="ghost" id="ap-bg-use" hidden>使用背景</button>
+                  <button type="button" class="ghost" id="ap-bg-clear">移除</button>
+                </div>
+              </div>
+
+              <div class="ap-group">
+                <span class="ap-label">背景样式</span>
+                <div class="ap-row" id="ap-presets">
+                  <button type="button" class="ap-card" data-preset="light-fog">亮雾</button>
+                  <button type="button" class="ap-card" data-preset="deepsea">深海</button>
+                  <button type="button" class="ap-card" data-preset="gradient">渐变</button>
+                  <button type="button" class="ap-card" data-preset="dark">暗玻璃</button>
+                </div>
+              </div>
+
+              <div class="ap-group ap-sliders">
+                <label>模糊 <input type="range" id="ap-blur" min="0" max="30" step="1" value="8" /><b id="ap-blur-v">8</b></label>
+                <label>压暗 <input type="range" id="ap-dim" min="0" max="80" step="1" value="35" /><b id="ap-dim-v">35</b></label>
+                <label>玻璃 <input type="range" id="ap-glass" min="30" max="95" step="1" value="62" /><b id="ap-glass-v">62</b></label>
+                <label>位置 <input type="range" id="ap-pos" min="0" max="100" step="1" value="30" /><b id="ap-pos-v">30</b></label>
+              </div>
+
+              <div class="ap-actions">
+                <button type="button" class="ghost" id="ap-reset">恢复默认</button>
+              </div>
+            </section>
           </section>
-        </section>
+        </main>
 
-        <!-- 外观 -->
-        <section class="page" data-page="appearance">
-          <section class="card appearance-page">
-            <div class="card-head">
-              <h2>外观</h2>
-              <span class="muted" id="ap-status">背景图只存在本机。</span>
+        <!-- 运行日志：底部滑入 -->
+        <section class="logdock" id="logdock">
+          <header class="dock-bar">
+            <button type="button" class="dock-title" id="dock-toggle" aria-expanded="true">
+              <span class="dock-dot"></span>
+              <span>运行日志</span>
+              <span class="dock-caret" id="dock-caret">▾</span>
+            </button>
+            <div class="dock-actions">
+              <button class="ghost small" data-copy-log title="复制全部日志">复制</button>
+              <button class="ghost small" id="btn-clear" data-clear-log title="清空日志">清空</button>
             </div>
-
-            <div class="ap-group">
-              <span class="ap-label">主题</span>
-              <div class="ap-row" id="ap-themes">
-                <button type="button" class="ap-card" data-theme="deepsea">A · 深海玻璃</button>
-                <button type="button" class="ap-card" data-theme="pixel">B · 像素方块</button>
-                <button type="button" class="ap-card active" data-theme="minimal">C · 极简白</button>
-              </div>
-            </div>
-
-            <div class="ap-group">
-              <span class="ap-label">背景图</span>
-              <div class="ap-row">
-                <button type="button" class="ghost" id="ap-bg-none">无背景</button>
-                <label class="ghost ap-upload">上传图片<input type="file" id="ap-bg-file" accept="image/*" hidden /></label>
-                <button type="button" class="ghost" id="ap-bg-use" hidden>使用背景</button>
-                <button type="button" class="ghost" id="ap-bg-clear">移除</button>
-              </div>
-            </div>
-
-            <div class="ap-group">
-              <span class="ap-label">背景样式</span>
-              <div class="ap-row" id="ap-presets">
-                <button type="button" class="ap-card" data-preset="light-fog">亮雾</button>
-                <button type="button" class="ap-card" data-preset="deepsea">深海</button>
-                <button type="button" class="ap-card" data-preset="gradient">渐变</button>
-                <button type="button" class="ap-card active" data-preset="dark">暗玻璃</button>
-              </div>
-            </div>
-
-            <div class="ap-group ap-sliders">
-              <label>模糊 <input type="range" id="ap-blur" min="0" max="30" step="1" value="8" /><b id="ap-blur-v">8</b></label>
-              <label>压暗 <input type="range" id="ap-dim" min="0" max="80" step="1" value="35" /><b id="ap-dim-v">35</b></label>
-              <label>玻璃 <input type="range" id="ap-glass" min="30" max="95" step="1" value="62" /><b id="ap-glass-v">62</b></label>
-              <label>位置 <input type="range" id="ap-pos" min="0" max="100" step="1" value="30" /><b id="ap-pos-v">30</b></label>
-            </div>
-
-            <div class="ap-actions">
-              <button type="button" class="ghost" id="ap-reset">恢复默认</button>
-            </div>
-          </section>
-        </section>
-      </main>
-
-      <aside class="rail" id="rail">
-        <section class="card console-card" id="sec-log">
-          <div class="card-head">
-            <h2>运行日志</h2>
-            <div class="rail-actions">
-              <button class="ghost" id="btn-clear">清空</button>
-              <button class="ghost" id="btn-rail-hide" title="收起日志栏">收起</button>
-            </div>
+          </header>
+          <div class="dock-body" id="dock-body">
+            <pre class="console" id="console"></pre>
           </div>
-          <pre class="console" id="console"></pre>
         </section>
-      </aside>
+      </div>
     </div>
-
-    <button type="button" class="rail-show" id="btn-rail-show" title="展开日志栏" hidden>日志</button>
 
     <div class="drawer-mask" id="drawer-mask" hidden></div>
 
