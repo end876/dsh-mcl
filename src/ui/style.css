@@ -543,6 +543,144 @@ body[data-theme="pixel"] .mod-tag { border-radius: 0; }
 .detail-body h4 { font-size: 12px; color: var(--muted); margin: 12px 0 6px; }
 .detail-text { font-size: 12px; line-height: 1.7; white-space: pre-wrap; }
 .detail-en { max-height: 220px; overflow: auto; }
+
+/* ── 崩溃修复建议 ─────────────────────────────────── */
+/* 弹窗 + 原因卡片 + 证据 + 修复按钮组；只用主题变量，三套主题和背景图下都跟卡片一致 */
+.crash-dialog { width: min(720px, calc(100vw - 40px)); }
+.crash-head { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+.crash-head h3 { margin: 0; font-size: 16px; }
+.crash-meta { font-size: 11px; color: var(--muted); line-height: 1.6; word-break: break-all; }
+.crash-summary {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  word-break: break-word;
+}
+.crash-summary.warn { background: var(--panel-2); border-left-color: var(--warn); }
+.crash-causes { display: flex; flex-direction: column; gap: 10px; max-height: 46vh; overflow: auto; padding-right: 2px; }
+.crash-cause {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--err);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  padding: 10px 12px;
+}
+.crash-cause.crash-warn { border-left-color: var(--warn); }
+.crash-cause-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.crash-cause-title { font-size: 13px; line-height: 1.5; }
+.crash-conf { margin-left: auto; font-size: 10px; color: var(--muted); white-space: nowrap; }
+.crash-badge {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.7;
+  padding: 0 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: var(--err);
+  white-space: nowrap;
+}
+.crash-badge.warn { color: var(--warn); }
+body[data-theme="pixel"] .crash-badge { border-radius: 0; }
+.crash-cause-exp { font-size: 12px; line-height: 1.7; margin-top: 6px; color: var(--text); word-break: break-word; }
+.crash-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 138px;
+  overflow: auto;
+  margin-top: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--log-bg);
+}
+.crash-evidence code {
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--log-text);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.crash-fixes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.crash-fix { font-size: 12px; padding: 6px 12px; }
+.crash-fix-main { border-color: var(--accent-line); color: var(--accent); background: var(--accent-soft); font-weight: 700; }
+.crash-fix-advisory {
+  flex: 1 1 100%;
+  padding: 7px 10px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+  word-break: break-word;
+}
+.crash-fix-advisory strong { display: block; color: var(--text); font-size: 12px; }
+.crash-fix-advisory span { display: block; margin-top: 2px; }
+.crash-all-fixes { margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.crash-all-fixes h4 { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.crash-empty {
+  text-align: center;
+  padding: 18px 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+}
+.crash-empty .primary { margin-top: 10px; }
+.crash-actions { flex-wrap: wrap; }
+#btn-crash-copy.crash-highlight {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 700;
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+/* 最近崩溃提示条（日志页 / 启动页） */
+.crash-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex: none;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--err);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+}
+.crash-banner[hidden] { display: none; }
+.crash-banner-icon { color: var(--err); font-size: 16px; line-height: 1; }
+.crash-banner-body { flex: 1; min-width: 160px; }
+.crash-banner-title { font-size: 12px; font-weight: 600; line-height: 1.5; word-break: break-word; }
+.crash-banner-meta { margin-top: 2px; font-size: 11px; color: var(--muted); word-break: break-all; }
+.crash-banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.crash-banner-actions .primary.small,
+.crash-banner-actions .ghost.small { padding: 5px 10px; font-size: 11px; }
+.logpage .crash-banner { margin-bottom: 8px; }
+#btn-crashfix.crash-alert { border-color: var(--err); color: var(--err); }
+/* 背景图模式下提示条走玻璃材质（与 .card/.dialog 一致的变量） */
+body[data-bg="image"] .crash-banner {
+  background: rgba(var(--glass-rgb, 12, 20, 30), var(--glass-alpha, .62));
+  border-color: var(--glass-line, rgba(255, 255, 255, .18));
+  border-left-color: var(--err);
+  backdrop-filter: blur(var(--glass-blur, 16px));
+}
+body[data-theme="pixel"][data-bg="image"] .crash-banner {
+  --glass-rgb: 58, 51, 44;
+  --glass-alpha: .94;
+  --glass-blur: 0px;
+}
+
 .msa-box {
   position: fixed; z-index: 61; left: 50%; bottom: 28px; transform: translateX(-50%);
   width: min(460px, calc(100vw - 32px));

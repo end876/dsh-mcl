@@ -8,7 +8,8 @@ import { GAME_DIR, ROOT, VERSIONS_DIR, isInside } from './paths.mjs';
 import { fetchJson, sha1Hex } from './http.mjs';
 import { findVersionDir, installedVersions, readLocalVersionJson } from './install.mjs';
 import { RUNTIME_NAME } from './launch.mjs';
-import { listJava } from './java.mjs';
+import { ensureJava, listJava } from './java.mjs';
+import { applyModAction, buildFixReport, crashSummary, detectCrash } from './crashfix.mjs';
 import { pickSource } from './source.mjs';
 import { inspectArchive, inferMcFromNames } from './mods.mjs';
 import { diagnoseSummary } from './diagnose.mjs';
@@ -368,11 +369,30 @@ function serveStatic(res, file) {
   });
 }
 
+/** 在系统文件管理器里定位/打开路径（调用前必须校验过路径范围） */
+function revealPath(target) {
+  try {
+    if (process.platform === 'win32') {
+      const stat = fs.existsSync(target) ? fs.statSync(target) : null;
+      if (stat?.isFile()) spawn('explorer.exe', ['/select,', target], { windowsHide: true });
+      else spawn('explorer.exe', [target], { windowsHide: true });
+    } else if (process.platform === 'darwin') {
+      spawn('open', [target]);
+    } else {
+      spawn('xdg-open', [target]);
+    }
+  } catch {
+    /* 打不开就算了，不影响接口返回 */
+  }
+}
+
 export async function startGui({ port = 51730, open = true, openWindow = true } = {}) {
   const clients = new Set();
   const jobs = { install: null, launch: null };
   let remoteCache = null;
   let remoteAt = 0;
+  // 最近一次崩溃修复报告（/api/crash/last、/api/state.lastCrash、重开页面时用）
+  let lastCrash = null;
 
   const broadcast = (event) => {
     const data = `data: ${JSON.stringify(event)}\n\n`;
@@ -392,8 +412,13 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
       windowsHide: true,
       env: process.env,
     });
-    const job = { id: `${kind}-${Date.now()}`, kind, meta, child, status: 'running' };
+    const job = { id: `${kind}-${Date.now()}`, kind, meta, child, status: 'running', startedAt: Date.now() };
     jobs[kind] = job;
+    if (kind === 'launch') {
+      // 新一次启动开始：清掉上一次的崩溃状态，别让旧报告误导
+      lastCrash = null;
+      broadcast({ type: 'crash', report: null });
+    }
     broadcast({ type: 'job', kind, status: 'running', meta });
 
     const flush = (chunk) => {
@@ -416,8 +441,14 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
       broadcast({ type: 'refresh' });
     };
 
-    child.on('close', (code) => done(code === 0 ? 'done' : 'error'));
-    child.on('error', () => done('error'));
+    child.on('close', (code) => {
+      done(code === 0 ? 'done' : 'error');
+      if (kind === 'launch') handleLaunchFinished(job, code);
+    });
+    child.on('error', () => {
+      done('error');
+      if (kind === 'launch') handleLaunchFinished(job, -1);
+    });
     return job;
   }
 
@@ -439,6 +470,51 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
       }
     }
     return true;
+  }
+
+  /**
+   * 生成崩溃修复报告并缓存；手动诊断和启动失败自动诊断共用。
+   * 返回报告；实例不存在返回 null。
+   */
+  function analyzeCrash(instance, options = {}) {
+    const dir = safeVersionDir(instance);
+    if (!dir) return null;
+    const report = buildFixReport(instance, {
+      dir,
+      exitCode: options.exitCode,
+      launchedAt: options.launchedAt,
+      auto: Boolean(options.auto),
+      java: { available: cachedJava() },
+    });
+    if (report.crashed || report.causes.length > 0) {
+      lastCrash = report;
+      if (options.broadcast) broadcast({ type: 'crash', report });
+    }
+    return report;
+  }
+
+  /** 启动任务结束后：只有异常退出 / 有崩溃痕迹才自动生成修复报告并广播 */
+  function handleLaunchFinished(job, cliExitCode) {
+    const instance = job.meta?.version;
+    if (!instance) return;
+    // 等启动器把运行时快照和日志 flush 完，再分析
+    setTimeout(() => {
+      try {
+        const dir = safeVersionDir(instance);
+        if (!dir) return;
+        const detected = detectCrash(dir, { launchedAt: job.startedAt, exitCode: cliExitCode });
+        const failed = typeof cliExitCode === 'number' && cliExitCode !== 0;
+        if (!detected.crashed && !failed) return;
+        analyzeCrash(instance, {
+          exitCode: detected.exitCode ?? cliExitCode,
+          launchedAt: job.startedAt,
+          auto: true,
+          broadcast: true,
+        });
+      } catch {
+        /* 自动诊断失败不能影响服务进程 */
+      }
+    }, 700);
   }
 
   let lastLaunched = null;
@@ -574,6 +650,8 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
       running: Boolean(jobs.launch) || Boolean(runtime?.alive),
       installing: Boolean(jobs.install),
       installTarget: jobs.install?.meta?.version ?? null,
+      // 最近一次崩溃修复报告（重新打开界面 / DSH 浮窗重连时用）
+      lastCrash: crashSummary(lastCrash),
     };
   }
 
@@ -1189,6 +1267,115 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         } catch (error) {
           sendJson(res, 500, { error: error.message });
         }
+        return;
+      }
+
+      // ── 崩溃修复助手：结构化报告 + 可执行修复动作 ──
+      if (route === '/api/crashfix' && req.method === 'POST') {
+        const body = await readBody(req);
+        const instance = String(body.instance ?? activeInstance() ?? '').trim();
+        if (!instance) {
+          sendJson(res, 400, { error: '缺少实例名' });
+          return;
+        }
+        try {
+          const report = analyzeCrash(instance, {});
+          if (!report) {
+            sendJson(res, 404, { error: `找不到实例 ${instance}` });
+            return;
+          }
+          sendJson(res, 200, { report });
+        } catch (error) {
+          sendJson(res, 500, { error: error.message });
+        }
+        return;
+      }
+
+      if (route === '/api/crash/last') {
+        sendJson(res, 200, { report: lastCrash });
+        return;
+      }
+
+      if (route === '/api/crashfix/apply' && req.method === 'POST') {
+        const body = await readBody(req);
+        const instance = String(body.instance ?? '').trim();
+        const kind = String(body.kind ?? '').trim();
+        const payload = body.payload && typeof body.payload === 'object' ? body.payload : {};
+        const dir = safeVersionDir(instance);
+        if (!dir) {
+          sendJson(res, 404, { error: `找不到实例 ${instance}` });
+          return;
+        }
+        try {
+          if (kind === 'disable-mod' || kind === 'enable-mod' || kind === 'remove-mod') {
+            sendJson(res, 200, applyModAction(dir, kind, payload));
+            return;
+          }
+          if (kind === 'open-report' || kind === 'open-log') {
+            const raw = String(payload.path ?? '').trim();
+            const target = raw ? path.resolve(raw) : path.join(dir, 'logs');
+            if (!isInside(GAME_DIR, target) && !isInside(dir, target)) {
+              sendJson(res, 400, { error: '拒绝打开实例目录之外的位置' });
+              return;
+            }
+            if (!fs.existsSync(target)) {
+              sendJson(res, 404, { error: `路径不存在：${target}` });
+              return;
+            }
+            revealPath(target);
+            sendJson(res, 200, { ok: true, message: `已在资源管理器打开：${target}` });
+            return;
+          }
+          if (kind === 'install-java') {
+            const major = Number(payload.major);
+            if (!Number.isFinite(major) || major < 8 || major > 25) {
+              sendJson(res, 400, { error: 'Java 大版本不合法' });
+              return;
+            }
+            const java = await ensureJava(major, { autoDownload: true });
+            javaCache = null; // 装完 Java 让状态缓存刷新
+            sendJson(res, 200, { ok: true, message: `已准备好 Java ${java.major}：${java.exe}` });
+            return;
+          }
+          // 调内存 / 重试启动 / 去模组库搜索这些动作归界面执行
+          sendJson(res, 200, { ok: false, needsClient: true, message: `动作 ${kind} 由界面处理` });
+        } catch (error) {
+          sendJson(res, 500, { error: error.message });
+        }
+        return;
+      }
+
+      if (route === '/api/mods/toggle' && req.method === 'POST') {
+        const body = await readBody(req);
+        const instance = String(body.instance ?? '').trim();
+        const dir = safeVersionDir(instance);
+        if (!dir) {
+          sendJson(res, 404, { error: `找不到实例 ${instance}` });
+          return;
+        }
+        try {
+          const kind = body.enable ? 'enable-mod' : 'disable-mod';
+          sendJson(res, 200, applyModAction(dir, kind, { jar: body.jar }));
+        } catch (error) {
+          sendJson(res, 500, { error: error.message });
+        }
+        return;
+      }
+
+      if (route === '/api/reveal' && req.method === 'POST') {
+        const body = await readBody(req);
+        const raw = String(body.path ?? '').trim();
+        const target = raw ? path.resolve(raw) : '';
+        if (!target || (!isInside(GAME_DIR, target) && !isInside(path.join(os.homedir(), '.mcl'), target))) {
+          sendJson(res, 400, { error: '拒绝打开该路径' });
+          return;
+        }
+        if (!fs.existsSync(target)) {
+          sendJson(res, 404, { error: '路径不存在' });
+          return;
+        }
+        revealPath(target);
+        sendJson(res, 200, { ok: true });
         return;
       }
 

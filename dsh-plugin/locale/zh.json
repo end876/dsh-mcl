@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Minecraft 启动器",
-    "description": "设置页管版本与安装，右下角浮窗看状态：拖动、日志尾巴、内存、登录、崩溃诊断。"
+    "description": "设置页管版本与安装，右下角浮窗看状态：拖动、日志尾巴、内存、登录、崩溃诊断与一键修复。"
   },
   "section": {
     "title": "Minecraft",
@@ -44,5 +44,22 @@
     "offline": "离线玩家（未登录）",
     "noLogs": "暂时没有日志",
     "noVersions": "还没有安装版本"
+  },
+  "crash": {
+    "title": "崩溃修复",
+    "crashed": "游戏崩溃",
+    "suggestions": "修复建议",
+    "collapse": "收起",
+    "copyReport": "复制报告",
+    "ignore": "忽略",
+    "diagnose": "崩溃诊断",
+    "diagnosing": "分析中…",
+    "noRule": "没命中已知规则，把报告复制给 AI 分析",
+    "noCrash": "没有找到崩溃日志",
+    "memorySet": "已把内存设为 {memory}，重启游戏后生效",
+    "installMod": "去「设置 → Minecraft → 模组库」搜索「{query}」安装",
+    "retryLaunch": "重新启动",
+    "fixFailed": "修复失败：{error}",
+    "recent": "检测到崩溃"
   }
 }

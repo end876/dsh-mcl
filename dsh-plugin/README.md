@@ -1,10 +1,10 @@
 # dsh-mc-launcher · 插件说明
 
-在 DSH 里操作 Minecraft：设置页管版本、安装、**模组库**（搜索/冲突预检/批量安装），右下角浮窗看状态（拖动 / 进度 / 日志 / 内存 / 登录 / 崩溃诊断）。
+在 DSH 里操作 Minecraft：设置页管版本、安装、**模组库**（搜索/冲突预检/批量安装），右下角浮窗看状态（拖动 / 进度 / 日志 / 内存 / 登录 / 崩溃诊断）。游戏崩溃后会自动分析 `crash-reports` 与日志，在浮窗弹出红色**修复建议卡片**，可一键执行修复（调内存 / 禁用 mod / 装 Java / 打开报告 / 重试启动等）。
 
 - 包名：`@local/dsh-mc-launcher`
-- 版本：**1.0.2**（2026-10-31）
-- 配套启动器：`mc-launcher` 1.0.2（需要它的 HTTP 服务；端口默认 51730，被占用会自动往后找）
+- 版本：**1.1.0**（2026-10-31）
+- 配套启动器：`mc-launcher` 1.1.0（需要它的 HTTP 服务；端口默认 51730，被占用会自动往后找）
 - Host 半边：激活时先在 `~/.mcl/server.json` 和 51730~51749 里找已在跑的启动器，没有就用内置 Node 拉起
 - 客户端：同样按发现文件/端口范围找服务，端口变了自动重新连（含 SSE）
 
@@ -75,6 +75,8 @@
   - 装的去向写在卡片里：模组 → `fabric-<mc>-mods`，整合包 → 新实例，光影 → 当前实例
 - **模组识别**：选 `.jar` / `.zip` / `.mrpack`，判断加载器与 MC 约束；**并读出它依赖哪些前置 mod**，
   去 Modrinth 反查后可以一键装缺失前置（查不到的会标出来）
+- **崩溃修复**：`崩溃诊断` 走新的结构化接口 `POST /api/crashfix`，列出结论、命中原因（解释 + 证据行）和修复按钮
+  （调内存、禁用/移除 mod、装 Java、打开报告/日志、重试启动、复制报告）；接口没实现时自动回退旧 `/api/diagnose`
 
 ### 浮窗（内置模式）
 
@@ -82,10 +84,13 @@
 - 头部：状态点 + 状态（运行中 / 待机 / 离线）、收起（▴，双击头部也能收）
 - 主体：实例下拉、启动 / 停止、`窗口`（打开独立窗口并收起自己）
 - **进度条**：安装 / 启动任务进行时，显示「安装 1.20.1 · 进度 87% 下载资源索引」这样的实时行（走 SSE `/api/events`）
-- 内存条：游戏常驻内存 / 上限（`-Xmx`）+ 系统空闲 + 已运行时长
+- 内存条：游戏常驻内存 / 上限（`-Xmx`）+ 系统空闲 + 已运行时长；下面一行 `启动内存` 可选档位（崩溃修复会自动改这里）
 - 登录：未登录时给「微软登录」，出设备码 + 复制，授权完自动变成「正版 · 名字」
 - 日志：实例的 `logs/latest.log` 尾巴（14 行，ERROR/WARN 着色，可复制）
-- `崩溃诊断`：直接出结论（命中规则给标题 + 建议）
+- **崩溃警告卡片**：游戏崩溃后 SSE 推来 `{type:'crash', report}`，在日志框上方显示红色卡片
+  「游戏崩溃：<一句话结论>」+ 实例/退出码；点「修复建议」展开最多 3 个原因（标题、解释、证据前 2 行）
+  和修复按钮；新一次启动（`job` launch running 或 `crash report:null`）自动清掉旧卡片
+- `崩溃诊断`：手动分析，优先 `POST /api/crashfix` 渲染结构化原因 + 修复按钮，接口不可用时回退旧 `/api/diagnose`
 
 ---
 
@@ -153,6 +158,25 @@ POST /api/diagnose  { instance }
 }
 ```
 
+### 崩溃修复
+
+```
+POST /api/crashfix        { instance }
+{ report: { instance, mc, loader, crashed, exitCode, summary, confidence,
+            causes: [{ id, title, severity, confidence, explanation, evidence, fixes }],
+            fixes: [Fix], sources, reportPath, text } }
+POST /api/crashfix/apply  { instance, kind, payload }   // 服务端支持的 kind 见下方说明
+GET  /api/crash/last      { report: Report|null }
+POST /api/mods/toggle     { instance, jar, enable }
+POST /api/reveal          { path }
+```
+
+`Fix` 形如 `{ id, kind, label, description, executable, payload }`；kind 有
+`set-memory` `disable-mod` `enable-mod` `remove-mod` `open-report` `open-log` `install-java`
+`install-mod` `retry-launch` `update-loader` `open-settings` `advisory`，插件浮窗按 kind 分发
+（服务端 kind 走 `/api/crashfix/apply`，客户端 kind 在浮窗里直接处理）。
+`/api/state` 同时增加 `lastCrash`，供刷新页面后提示最近一次崩溃。
+
 ### 认证
 
 ```
@@ -182,10 +206,11 @@ POST /api/open-window
 ### 事件流
 
 ```
-GET /api/events   // SSE：{type:"hello"|"line"|"job"|"refresh"|"auth"}
+GET /api/events   // SSE：{type:"hello"|"line"|"job"|"refresh"|"auth"|"crash"}
 ```
 
-浮窗用它做两件事：安装/启动进度（`job` 的 running + `line` 最新一行）、登录结果即时反馈。
+浮窗用它做三件事：安装/启动进度（`job` 的 running + `line` 最新一行）、登录结果即时反馈、
+崩溃修复自动弹卡（`crash` 带 `report` 弹出，`report:null` 或新一次 launch running 清空旧卡片）。
 跨源订阅靠 CORS 头（响应里带 `Access-Control-Allow-Origin: dsh-app://app`）。
 
 ### 端口发现
@@ -217,6 +242,19 @@ POST /api/client/mount?...   // 浮窗挂载信标，写入 tmp/client-mounts.lo
 ---
 
 ## 七、更新日志
+
+### v1.1.0（2026-10-31）
+
+- **崩溃修复建议（浮窗 UI）**：
+  - SSE 新增 `{type:'crash', report}`：自动分析完成后浮窗在日志框上方弹红色卡片（结论 + 实例/退出码），
+    展开看最多 3 个原因（解释 + 证据前 2 行）和修复按钮；新一次启动 / `report:null` 自动清掉旧卡片
+  - 修复动作分发：`set-memory` 改浮窗内存档位并提示重启；`disable-mod` / `remove-mod` / `open-report` /
+    `open-log` / `install-java` 走 `POST /api/crashfix/apply`；`retry-launch` 直接重新启动；
+    `install-mod` 提示去设置页模组库（并复制关键词）；`copy-report`（自加）复制报告全文
+  - 浮窗新增 `启动内存` 档位（崩溃建议可一键调整，和设置页共用 `mcl.memory`）
+- **设置页崩溃诊断**：新增「崩溃修复」卡片，`崩溃诊断` 优先 `POST /api/crashfix` 渲染结构化原因 + 修复按钮，
+  接口不可用时回退旧 `/api/diagnose`；收到 SSE 崩溃时显示「检测到崩溃」入口
+- locale 补充 `crash.*` 文案（中/英）
 
 ### v0.4.0（2026-10-30）
 

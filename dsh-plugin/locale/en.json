@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Minecraft Launcher",
-    "description": "Install and manage versions in Settings; a draggable panel shows logs, memory, login and crash diagnosis."
+    "description": "Install and manage versions in Settings; a draggable panel shows logs, memory, login, crash diagnosis and one-click fixes."
   },
   "section": {
     "title": "Minecraft",
@@ -44,5 +44,22 @@
     "offline": "Offline player (not signed in)",
     "noLogs": "No logs yet",
     "noVersions": "No installed versions"
+  },
+  "crash": {
+    "title": "Crash fixes",
+    "crashed": "Game crashed",
+    "suggestions": "Fix suggestions",
+    "collapse": "Collapse",
+    "copyReport": "Copy report",
+    "ignore": "Dismiss",
+    "diagnose": "Crash diagnosis",
+    "diagnosing": "Analyzing…",
+    "noRule": "No known rule matched — copy the report and let an AI analyze it",
+    "noCrash": "No crash log found",
+    "memorySet": "Memory set to {memory}; restart the game to apply",
+    "installMod": "Search “{query}” in Settings → Minecraft → Mod library",
+    "retryLaunch": "Relaunch",
+    "fixFailed": "Fix failed: {error}",
+    "recent": "Crash detected"
   }
 }

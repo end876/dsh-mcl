@@ -4,6 +4,10 @@
 
 ## ✅ 已修复
 
+- [x] **1.1.0** 崩溃修复助手（移植朋友 v1.1.0）：规则归因 + 修复动作 + 自动弹窗 + 报告落盘
+- [x] **1.0.2** BUG-001：PID 复用假「运行中」、`/api/stop` 误杀无关进程（stopped 优先 + tasklist 身份校验）
+- [x] **1.0.1** 本地整合包装成实例（实例名 = zip 文件名，`importpack`）
+- [x] **1.0.1** >8MB 整合包流式识别（`/api/mod/inspect-file`，626MB 实测 12.7s）
 - [x] Fabric 安装收尾卡死（下载无数据看门狗，90s 无数据重试）
 - [x] 实例 id 与目录不一致导致模组装进游戏读不到的目录（`ensureFabricInstance` / `ensureInstance`）
 - [x] 按配置隔离实例（`fabric-<mc>-<label>`）

@@ -66,6 +66,21 @@ const ui = {
   detailZh: $('#detail-zh'),
   detailEn: $('#detail-en'),
   detailClose: $('#detail-close'),
+  // 崩溃修复建议
+  crashMask: $('#crash-mask'),
+  crashDialog: $('#crash-dialog'),
+  crashTitle: $('#crash-title'),
+  crashMeta: $('#crash-meta'),
+  crashSummary: $('#crash-summary'),
+  crashCauses: $('#crash-causes'),
+  btnCrashCopy: $('#btn-crash-copy'),
+  btnCrashOpen: $('#btn-crash-open'),
+  btnCrashRetry: $('#btn-crash-retry'),
+  btnCrashClose: $('#btn-crash-close'),
+  btnCrashfix: $('#btn-crashfix'),
+  btnCrashfixStart: $('#btn-crashfix-start'),
+  crashBannerStart: $('#crash-banner-start'),
+  crashBannerLog: $('#crash-banner-log'),
   tabs: [...document.querySelectorAll('.tab')],
 };
 
@@ -76,6 +91,11 @@ const store = {
   remote: [],
   pick: '',
 };
+
+/** 崩溃修复：当前展示的报告 / 最近一次崩溃摘要 / 上次自动弹窗时间 */
+let crashReport = null;
+let lastCrashInfo = null;
+let crashShownAt = 0;
 
 const PREF_KEY = 'mcl.prefs';
 
@@ -274,6 +294,11 @@ async function refresh() {
   renderLaunchState();
   updatePills();
   updateMemoryUi();
+  // /api/state.lastCrash：后端已有最近崩溃时先点亮入口（不自动弹窗）
+  if (state.lastCrash && !crashReport) {
+    lastCrashInfo = state.lastCrash;
+    updateCrashEntryPoints();
+  }
 }
 
 async function loadRemote() {
@@ -412,6 +437,568 @@ async function doStop() {
   }
 }
 
+/* ---------- 崩溃修复建议 ---------- */
+
+/** 客户端自己处理的 fix.kind（其余走服务端 /api/crashfix/apply） */
+const CLIENT_FIX_KINDS = new Set(['set-memory', 'install-mod', 'retry-launch', 'update-loader', 'open-settings', 'advisory']);
+
+/** 切页面统一走左侧导航按钮，复用 appearance.js 的 pageTo */
+function navigateTo(page) {
+  document.querySelector(`.nav-item[data-page="${page}"]`)?.click();
+}
+
+function confidenceText(value) {
+  if (value === 'high') return '置信度高';
+  if (value === 'medium') return '置信度中';
+  if (value === 'low') return '置信度低';
+  return '';
+}
+
+function fmtCrashTime(iso) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return String(iso);
+  return date.toLocaleString('zh-CN', { hour12: false });
+}
+
+/** SSE crash 事件 / POST /api/crashfix 的 report -> /api/state.lastCrash 形状 */
+function reportToLastCrash(report) {
+  return {
+    instance: report?.instance ?? null,
+    at: report?.crashAt || report?.generatedAt || null,
+    summary: report?.summary || '游戏异常退出',
+    exitCode: report?.exitCode ?? null,
+    causeIds: (report?.causes ?? []).map((cause) => cause.id).filter(Boolean),
+    reportPath: report?.reportPath ?? null,
+  };
+}
+
+function openCrashDialog() {
+  if (ui.crashMask) ui.crashMask.hidden = false;
+  if (ui.crashDialog) ui.crashDialog.hidden = false;
+}
+
+function closeCrash() {
+  if (ui.crashMask) ui.crashMask.hidden = true;
+  if (ui.crashDialog) ui.crashDialog.hidden = true;
+  setCrashBusy(false);
+}
+
+function setCrashBusy(busy) {
+  // false 不在这里恢复：由 renderCrashReport 按报告内容重新决定各按钮状态
+  if (!busy) return;
+  for (const button of [ui.btnCrashCopy, ui.btnCrashOpen, ui.btnCrashRetry]) {
+    if (button) button.disabled = true;
+  }
+}
+
+/** 展示一份修复报告（SSE 自动弹窗 / 手动打开都走这里） */
+function showCrash(report) {
+  if (!report) return;
+  crashReport = report;
+  crashShownAt = Date.now();
+  if (report.crashed !== false) lastCrashInfo = reportToLastCrash(report);
+  setCrashBusy(false);
+  renderCrashReport(report);
+  openCrashDialog();
+  updateCrashEntryPoints();
+}
+
+/** 新一次启动开始时清空旧崩溃状态（不弹窗） */
+function resetCrashState() {
+  crashReport = null;
+  lastCrashInfo = null;
+  crashShownAt = 0;
+  closeCrash();
+  updateCrashEntryPoints();
+}
+
+/** 复制报告：优先 clipboard，失败退回 textarea + execCommand */
+function copyViaTextarea(text) {
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', 'readonly');
+  area.style.position = 'fixed';
+  area.style.top = '0';
+  area.style.left = '-9999px';
+  document.body.appendChild(area);
+  let ok = false;
+  try {
+    area.select();
+    area.setSelectionRange(0, area.value.length);
+    ok = document.execCommand('copy');
+  } finally {
+    area.remove();
+  }
+  if (!ok) throw new Error('execCommand copy 失败');
+}
+
+async function copyCrashReport() {
+  const text = crashReport?.text;
+  if (!text) {
+    toast('还没有可复制的报告', true);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('崩溃修复报告已复制，可直接粘给 AI');
+  } catch {
+    try {
+      copyViaTextarea(text);
+      toast('崩溃修复报告已复制，可直接粘给 AI');
+    } catch {
+      toast('复制失败，请手动选中报告文本', true);
+    }
+  }
+}
+
+/** 根据 report 推断「打开崩溃报告」按钮该发什么服务端动作 */
+function crashOpenFix(report = crashReport) {
+  if (!report) return null;
+  const sources = report.sources ?? {};
+  const file = sources.crashReport || report.reportPath;
+  if (file) {
+    return { id: 'open-crash-report', kind: 'open-report', label: '打开崩溃报告', executable: true, payload: { path: file } };
+  }
+  if (sources.log || sources.launcherConsole || report.instance) {
+    return {
+      id: 'open-crash-log',
+      kind: 'open-log',
+      label: '打开日志目录',
+      executable: true,
+      payload: { instance: report.instance },
+    };
+  }
+  return null;
+}
+
+function renderFixNode(fix) {
+  if (!fix) return document.createElement('span');
+  // executable:false 只展示文案，不渲染按钮
+  if (fix.executable === false) {
+    const box = document.createElement('div');
+    box.className = 'crash-fix-advisory';
+    const title = document.createElement('strong');
+    title.textContent = fix.label || fix.payload?.hint || '建议';
+    box.appendChild(title);
+    const desc = fix.description || (fix.payload?.hint !== fix.label ? fix.payload?.hint : '');
+    if (desc) {
+      const span = document.createElement('span');
+      span.textContent = desc;
+      box.appendChild(span);
+    }
+    return box;
+  }
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'ghost crash-fix';
+  if (fix.kind === 'retry-launch' || fix.kind === 'set-memory') button.classList.add('crash-fix-main');
+  button.textContent = fix.label || fix.kind || '修复';
+  if (fix.description) button.title = fix.description;
+  button.addEventListener('click', () => applyCrashFix(fix, button));
+  return button;
+}
+
+function renderCauseCard(cause) {
+  const severity = cause?.severity === 'warn' ? 'warn' : 'fatal';
+  const card = document.createElement('article');
+  card.className = `crash-cause crash-${severity}`;
+
+  const head = document.createElement('header');
+  head.className = 'crash-cause-head';
+  const badge = document.createElement('span');
+  badge.className = `crash-badge ${severity}`;
+  badge.textContent = severity === 'warn' ? '警告' : '致命';
+  const title = document.createElement('strong');
+  title.className = 'crash-cause-title';
+  title.textContent = cause?.title || '未知原因';
+  head.append(badge, title);
+  const confidence = Number(cause?.confidence);
+  if (Number.isFinite(confidence)) {
+    const conf = document.createElement('span');
+    conf.className = 'crash-conf';
+    conf.textContent = `置信度 ${Math.round(Math.min(1, Math.max(0, confidence)) * 100)}%`;
+    head.appendChild(conf);
+  }
+  card.appendChild(head);
+
+  if (cause?.explanation) {
+    const exp = document.createElement('p');
+    exp.className = 'crash-cause-exp';
+    exp.textContent = cause.explanation;
+    card.appendChild(exp);
+  }
+
+  const evidence = (cause?.evidence ?? []).filter((line) => String(line ?? '').trim()).slice(0, 6);
+  if (evidence.length > 0) {
+    const box = document.createElement('div');
+    box.className = 'crash-evidence';
+    for (const line of evidence) {
+      const code = document.createElement('code');
+      code.textContent = String(line).slice(0, 300);
+      box.appendChild(code);
+    }
+    card.appendChild(box);
+  }
+
+  const fixes = (cause?.fixes ?? []).filter(Boolean);
+  if (fixes.length > 0) {
+    const row = document.createElement('div');
+    row.className = 'crash-fixes';
+    for (const fix of fixes) row.appendChild(renderFixNode(fix));
+    card.appendChild(row);
+  }
+  return card;
+}
+
+function renderCrashReport(report) {
+  const crashed = report?.crashed !== false;
+  const causes = Array.isArray(report?.causes) ? report.causes : [];
+  const fixes = Array.isArray(report?.fixes) ? report.fixes : [];
+
+  ui.crashTitle.textContent = crashed ? '崩溃修复建议' : '崩溃检查结果';
+  ui.crashDialog?.classList.toggle('crash-no-crash', !crashed);
+
+  const meta = [];
+  if (report?.instance) meta.push(`实例 ${report.instance}`);
+  if (report?.mc) meta.push(`MC ${report.mc}`);
+  if (report?.loader) meta.push(report.loader);
+  if (report?.crashed) {
+    if (report.exitCode !== null && report.exitCode !== undefined) meta.push(`退出码 ${report.exitCode}`);
+    const at = report.crashAt || report.generatedAt;
+    if (at) meta.push(fmtCrashTime(at));
+  }
+  const confidence = confidenceText(report?.confidence);
+  if (confidence) meta.push(confidence);
+  ui.crashMeta.textContent = meta.join(' · ');
+
+  ui.crashSummary.textContent = report?.summary || (crashed ? '游戏异常退出，但没有生成结论。' : '没有找到崩溃日志。');
+  ui.crashSummary.classList.toggle('warn', !crashed);
+
+  ui.crashCauses.innerHTML = '';
+  if (causes.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'crash-empty';
+    const text = document.createElement('p');
+    text.textContent = crashed
+      ? '未命中已知规则，把报告复制给 AI 分析（通常比人工翻日志更快）。'
+      : '没有发现崩溃迹象，暂时不需要修复；下次游戏崩溃后再来看这里。';
+    empty.appendChild(text);
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'primary small';
+    copy.textContent = '复制报告';
+    copy.addEventListener('click', copyCrashReport);
+    empty.appendChild(copy);
+    ui.crashCauses.appendChild(empty);
+  } else {
+    for (const cause of causes) ui.crashCauses.appendChild(renderCauseCard(cause));
+  }
+
+  // 底部汇总跨 cause 的修复动作（去重，最多 8 个）
+  if (fixes.length > 0) {
+    const seen = new Set();
+    const list = [];
+    for (const fix of fixes) {
+      if (!fix) continue;
+      const key = fix.id || `${fix.kind}:${JSON.stringify(fix.payload ?? {})}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      list.push(fix);
+      if (list.length >= 8) break;
+    }
+    if (list.length > 0) {
+      const box = document.createElement('section');
+      box.className = 'crash-all-fixes';
+      const heading = document.createElement('h4');
+      heading.textContent = '全部修复动作';
+      const row = document.createElement('div');
+      row.className = 'crash-fixes';
+      for (const fix of list) row.appendChild(renderFixNode(fix));
+      box.append(heading, row);
+      ui.crashCauses.appendChild(box);
+    }
+  }
+
+  const openTarget = crashOpenFix(report);
+  if (ui.btnCrashOpen) {
+    ui.btnCrashOpen.disabled = !openTarget;
+    ui.btnCrashOpen.textContent = openTarget?.kind === 'open-log' ? '打开日志目录' : '打开崩溃报告';
+  }
+  if (ui.btnCrashCopy) {
+    ui.btnCrashCopy.disabled = !report?.text;
+    ui.btnCrashCopy.classList.toggle('crash-highlight', causes.length === 0 && Boolean(report?.text));
+  }
+  if (ui.btnCrashRetry) ui.btnCrashRetry.disabled = false;
+}
+
+/** 最近崩溃提示条（日志页 / 启动页各一份） */
+function renderCrashBanners(info) {
+  for (const banner of [ui.crashBannerStart, ui.crashBannerLog]) {
+    if (!banner) continue;
+    banner.innerHTML = '';
+    if (!info) {
+      banner.hidden = true;
+      continue;
+    }
+    banner.hidden = false;
+    const icon = document.createElement('span');
+    icon.className = 'crash-banner-icon';
+    icon.textContent = '⚠';
+    const body = document.createElement('div');
+    body.className = 'crash-banner-body';
+    const title = document.createElement('div');
+    title.className = 'crash-banner-title';
+    title.textContent = `最近崩溃：${info.summary || '原因待分析'}`;
+    const meta = document.createElement('div');
+    meta.className = 'crash-banner-meta';
+    meta.textContent = [
+      info.instance ? `实例 ${info.instance}` : '',
+      info.exitCode !== null && info.exitCode !== undefined ? `退出码 ${info.exitCode}` : '',
+      info.at ? fmtCrashTime(info.at) : '',
+    ].filter(Boolean).join(' · ');
+    body.append(title, meta);
+    const actions = document.createElement('div');
+    actions.className = 'crash-banner-actions';
+    const view = document.createElement('button');
+    view.type = 'button';
+    view.className = 'primary small';
+    view.textContent = '查看修复建议';
+    view.addEventListener('click', openCrashFix);
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'ghost small';
+    retry.textContent = '重新启动';
+    retry.addEventListener('click', () => retryLaunch(info.instance));
+    actions.append(view, retry);
+    banner.append(icon, body, actions);
+  }
+}
+
+function updateCrashEntryPoints() {
+  const info = lastCrashInfo;
+  const hasCrash = Boolean(info || (crashReport && crashReport.crashed !== false));
+  if (ui.btnCrashfixStart) ui.btnCrashfixStart.hidden = !hasCrash;
+  if (ui.btnCrashfix) ui.btnCrashfix.classList.toggle('crash-alert', Boolean(info));
+  renderCrashBanners(info);
+}
+
+function retryLaunch(instance) {
+  if (store.state.running) {
+    toast('游戏正在运行，先点「停止」再重试', true);
+    return;
+  }
+  const target = instance || store.state.selected;
+  const exists = target && (store.state.versions ?? []).some((version) => version.id === target);
+  if (exists) selectVersion(target);
+  else if (target && target !== store.state.selected) toast(`实例 ${target} 不在已安装列表里，用当前实例启动`, true);
+  if (!store.state.selected) {
+    toast('还没有可启动的实例', true);
+    return;
+  }
+  doLaunch();
+}
+
+/** 打开崩溃修复面板：有缓存报告直接展示，否则 POST /api/crashfix 现场分析 */
+async function openCrashFix() {
+  if (crashReport) {
+    showCrash(crashReport);
+    return;
+  }
+  const instance = lastCrashInfo?.instance || store.state.selected;
+  if (!instance) {
+    toast('先选一个版本再分析崩溃', true);
+    return;
+  }
+  openCrashDialog();
+  ui.crashTitle.textContent = '崩溃修复建议';
+  ui.crashMeta.textContent = `${instance} · 正在分析…`;
+  ui.crashSummary.textContent = '正在读取 crash-reports / 日志 / 模组信息，生成修复建议…';
+  ui.crashSummary.classList.remove('warn');
+  ui.crashCauses.innerHTML = '';
+  const loading = document.createElement('div');
+  loading.className = 'crash-empty';
+  loading.textContent = '正在分析…';
+  ui.crashCauses.appendChild(loading);
+  if (ui.btnCrashOpen) ui.btnCrashOpen.disabled = true;
+  setCrashBusy(true);
+  try {
+    const data = await api('/api/crashfix', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instance }),
+    });
+    if (!data?.report) throw new Error('接口没有返回报告');
+    // 用户可能在分析过程中已经把弹窗关了：只缓存，不强行再弹
+    const stillOpen = Boolean(ui.crashDialog && !ui.crashDialog.hidden);
+    crashReport = data.report;
+    crashShownAt = Date.now();
+    if (data.report.crashed !== false) lastCrashInfo = reportToLastCrash(data.report);
+    setCrashBusy(false);
+    updateCrashEntryPoints();
+    if (stillOpen) renderCrashReport(data.report);
+    else toast('已生成崩溃修复建议，点「崩溃修复」查看');
+  } catch (error) {
+    setCrashBusy(false);
+    if (ui.btnCrashCopy) ui.btnCrashCopy.disabled = true;
+    if (ui.btnCrashOpen) ui.btnCrashOpen.disabled = true;
+    if (ui.btnCrashRetry) ui.btnCrashRetry.disabled = false;
+    ui.crashMeta.textContent = `${instance} · 分析失败`;
+    ui.crashSummary.className = 'crash-summary warn';
+    ui.crashSummary.textContent = `生成修复建议失败：${error.message}`;
+    ui.crashCauses.innerHTML = '';
+    const tip = document.createElement('div');
+    tip.className = 'crash-empty';
+    tip.textContent = '接口暂不可用或分析出错。可以关闭后稍后重试，或到日志页确认崩溃原因。';
+    ui.crashCauses.appendChild(tip);
+    toast(`生成修复建议失败：${error.message}`, true);
+  }
+}
+
+/** 服务端类修复：POST /api/crashfix/apply，成功后重新分析刷新面板 */
+async function applyCrashFixServer(fix) {
+  const instance = fix.payload?.instance || crashReport?.instance || lastCrashInfo?.instance || store.state.selected;
+  if (!instance) {
+    toast('这个修复需要实例信息，但当前没有可用实例', true);
+    return;
+  }
+  if (fix.kind === 'install-java') toast(`正在下载安装 Java ${fix.payload?.major ?? ''}，可能要几分钟…`);
+  const data = await api('/api/crashfix/apply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ instance, kind: fix.kind, payload: fix.payload ?? {} }),
+  });
+  if (data?.ok === false) {
+    toast(data.message || (data.needsClient ? '这个修复需要在客户端处理' : '修复没有执行成功'), !data.needsClient);
+    return;
+  }
+  toast(data?.message || fix.label || '已执行修复');
+  await refreshCrashReport(instance);
+}
+
+async function refreshCrashReport(instance) {
+  const target = instance || crashReport?.instance || lastCrashInfo?.instance || store.state.selected;
+  if (!target) return;
+  try {
+    const data = await api('/api/crashfix', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instance: target }),
+    });
+    if (!data?.report) return;
+    crashReport = data.report;
+    if (data.report.crashed !== false) lastCrashInfo = reportToLastCrash(data.report);
+    if (ui.crashDialog && !ui.crashDialog.hidden) renderCrashReport(data.report);
+    updateCrashEntryPoints();
+  } catch (error) {
+    toast(`刷新修复建议失败：${error.message}`, true);
+  }
+}
+
+/** fix 动作分发：客户端动作本地执行，服务端动作交给 /api/crashfix/apply */
+async function applyCrashFix(fix, button) {
+  if (!fix) return;
+  if (fix.executable === false) {
+    if (fix.label || fix.payload?.hint) toast(fix.label || fix.payload.hint);
+    return;
+  }
+  const original = button?.textContent ?? '';
+  if (button) {
+    button.disabled = true;
+    button.textContent = fix.kind === 'install-java' ? '正在安装 Java…' : '处理中…';
+  }
+  try {
+    if (CLIENT_FIX_KINDS.has(fix.kind)) {
+      switch (fix.kind) {
+        case 'set-memory': {
+          const next = Math.round(Number(String(fix.payload?.memory ?? '').replace(/[^\d.]/g, '')));
+          if (!Number.isFinite(next) || next <= 0) {
+            toast(fix.description || fix.label || '没能解析建议的内存值', true);
+            return;
+          }
+          const value = Math.min(64, Math.max(1, next));
+          ui.inputMemory.value = String(value);
+          appliedMemory = value;
+          savePrefs({ memory: value });
+          updateMemoryUi();
+          navigateTo('start');
+          toast(`已设为 ${value} G，点「启动游戏」重试`);
+          return;
+        }
+        case 'install-mod': {
+          const query = String(fix.payload?.query ?? '').trim();
+          const mc = String(fix.payload?.mc ?? '').trim();
+          closeCrash();
+          navigateTo('library');
+          if (mc) ui.drawerMc.value = mc;
+          drawerOpen('mod');
+          if (!query) return;
+          ui.drawerSearch.value = query;
+          await doDrawerSearch();
+          toast(`已在模组库搜索「${query}」`);
+          return;
+        }
+        case 'retry-launch': {
+          if (store.state.running) {
+            toast('游戏正在运行，先点「停止」再重试', true);
+            return;
+          }
+          const target = fix.payload?.instance || crashReport?.instance || lastCrashInfo?.instance;
+          closeCrash();
+          retryLaunch(target);
+          return;
+        }
+        case 'update-loader': {
+          const bits = [fix.payload?.loader, fix.payload?.mc].filter(Boolean).join(' · ');
+          toast(`${fix.label || '建议升级加载器'}${bits ? `（${bits}）` : ''}`);
+          if (fix.description) appendLine(`! ${fix.description}`);
+          return;
+        }
+        case 'open-settings': {
+          const page = fix.payload?.page === 'start' ? 'start' : 'appearance';
+          closeCrash();
+          navigateTo(page);
+          toast(fix.label || '已切到设置页');
+          return;
+        }
+        case 'advisory': {
+          toast(fix.label || fix.payload?.hint || '建议');
+          return;
+        }
+        default:
+          break;
+      }
+    }
+    await applyCrashFixServer(fix);
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    if (button?.isConnected) {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
+}
+
+/** 启动时读取最近一次崩溃（GET /api/crash/last，失败时退回 /api/state.lastCrash） */
+async function loadLastCrash() {
+  const fromState = store.state?.lastCrash ?? null;
+  let report = null;
+  try {
+    const data = await api('/api/crash/last');
+    if (data?.report) report = data.report;
+  } catch {
+    /* 后端尚未提供 /api/crash/last 时静默降级 */
+  }
+  if (report && report.crashed !== false) {
+    crashReport = report;
+    lastCrashInfo = reportToLastCrash(report);
+  } else if (fromState) {
+    lastCrashInfo = fromState;
+  }
+  updateCrashEntryPoints();
+}
+
 /* ---------- 模组 / 整合包识别 ---------- */
 
 function setKind(kind) {
@@ -543,28 +1130,6 @@ async function pickFileFromSystem() {
     }
   } catch (error) {
     toast(error.message, true);
-  }
-}
-
-async function diagnoseInstance(instance) {
-  if (!instance) return;
-  appendLine(`› 正在分析 ${instance} 的崩溃日志…`);
-  try {
-    const result = await api('/api/diagnose', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ instance }),
-    });
-    if (result.findings?.length) {
-      for (const finding of result.findings) {
-        appendLine(`✗ ${finding.title}｜${finding.suggestion}`);
-      }
-    } else {
-      appendLine(`! ${result.message ?? '没有命中已知规则'}`);
-    }
-    if (result.excerpt) appendLine(result.excerpt.split('\n').slice(0, 4).join('\n'));
-  } catch (error) {
-    appendLine(`! 诊断失败：${error.message}`);
   }
 }
 
@@ -1130,6 +1695,28 @@ function bindEvents() {
   ui.conflictMask.addEventListener('click', hideConflict);
   ui.detailClose.addEventListener('click', closeDetail);
   ui.detailMask.addEventListener('click', closeDetail);
+  // 崩溃修复面板
+  ui.btnCrashfix?.addEventListener('click', openCrashFix);
+  ui.btnCrashfixStart?.addEventListener('click', openCrashFix);
+  ui.btnCrashClose?.addEventListener('click', closeCrash);
+  ui.crashMask?.addEventListener('click', closeCrash);
+  ui.btnCrashCopy?.addEventListener('click', copyCrashReport);
+  ui.btnCrashOpen?.addEventListener('click', () => {
+    const fix = crashOpenFix(crashReport);
+    if (!fix) {
+      toast('报告里没有可打开的文件路径', true);
+      return;
+    }
+    applyCrashFix(fix, ui.btnCrashOpen);
+  });
+  ui.btnCrashRetry?.addEventListener('click', () => {
+    const target = crashReport?.instance || lastCrashInfo?.instance;
+    closeCrash();
+    retryLaunch(target);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && ui.crashDialog && !ui.crashDialog.hidden) closeCrash();
+  });
   ui.drawerFilters.addEventListener('click', (event) => {
     const chip = event.target.closest('.chip');
     if (!chip) return;
@@ -1232,12 +1819,21 @@ function bindEvents() {
       }
       if (data.kind === 'launch') {
         store.state.running = data.status === 'running';
+        // 新一次启动开始：清空旧崩溃状态（不弹窗）
+        if (data.status === 'running') resetCrashState();
         if (data.status === 'done') toast('游戏已退出');
-        if (data.status === 'error') {
-          toast('游戏异常退出，正在分析日志…', true);
-          diagnoseInstance(store.state.selected);
-        }
+        // 崩溃时后端会自动分析并广播 crash 事件，这里只提示等待
+        if (data.status === 'error') toast('游戏异常退出，正在生成修复建议…', true);
         renderLaunchState();
+      }
+      return;
+    }
+    if (data.type === 'crash') {
+      if (data.report) {
+        showCrash(data.report);
+        appendLine('✗ 已生成崩溃修复建议，可在弹窗里一键处理');
+      } else {
+        resetCrashState();
       }
       return;
     }
@@ -1272,6 +1868,7 @@ async function main() {
   bindEvents();
   await refreshAuth();
   await refresh();
+  await loadLastCrash();
   await loadRemote();
 }
 

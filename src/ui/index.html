@@ -46,6 +46,8 @@
         <main class="main">
           <!-- 启动 -->
           <section class="page active" data-page="start">
+            <!-- 最近崩溃提示条：有崩溃记录时由 app.js 填充 -->
+            <div class="crash-banner" id="crash-banner-start" hidden></div>
             <section class="card hero" id="sec-launch">
               <div class="hero-head">
                 <h2>启动游戏</h2>
@@ -72,6 +74,7 @@
               <div class="actions">
                 <button class="primary big" id="btn-launch" disabled>启 动 游 戏</button>
                 <button class="danger" id="btn-stop" hidden>停止</button>
+                <button class="ghost" id="btn-crashfix-start" hidden>崩溃修复</button>
               </div>
               <p class="hint" id="launch-hint">先选一个版本</p>
             </section>
@@ -141,10 +144,12 @@
               <div class="card-head">
                 <h2>运行日志</h2>
                 <div class="logpage-actions">
+                  <button class="ghost small" id="btn-crashfix">崩溃修复</button>
                   <button class="ghost small" data-copy-log>复制</button>
                   <button class="ghost small" data-clear-log>清空</button>
                 </div>
               </div>
+              <div class="crash-banner" id="crash-banner-log" hidden></div>
               <div class="logpage-body" id="logpage-slot"></div>
             </section>
           </section>
@@ -280,6 +285,23 @@
       </div>
       <div class="dialog-actions">
         <button class="ghost" id="detail-close">关闭</button>
+      </div>
+    </div>
+
+    <!-- 崩溃修复建议：SSE crash 事件 / 日志页「崩溃修复」按钮打开 -->
+    <div class="dialog-mask" id="crash-mask" hidden></div>
+    <div class="dialog crash-dialog" id="crash-dialog" role="dialog" aria-modal="true" aria-labelledby="crash-title" hidden>
+      <header class="crash-head">
+        <h3 id="crash-title">崩溃修复建议</h3>
+        <div class="crash-meta" id="crash-meta"></div>
+      </header>
+      <p class="crash-summary" id="crash-summary"></p>
+      <div class="crash-causes" id="crash-causes"></div>
+      <div class="dialog-actions crash-actions">
+        <button class="ghost" id="btn-crash-copy">复制报告</button>
+        <button class="ghost" id="btn-crash-open">打开崩溃报告</button>
+        <button class="ghost" id="btn-crash-retry">重新启动</button>
+        <button class="primary" id="btn-crash-close">关闭</button>
       </div>
     </div>
 

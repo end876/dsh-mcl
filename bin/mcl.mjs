@@ -13,7 +13,7 @@ import { installMod, installModpack, installModsBatch } from '../src/modrinth.mj
 import { scanAll, scanInstance } from '../src/dupes.mjs';
 import { importArchive } from '../src/import.mjs';
 import { importModpackZip } from '../src/importpack.mjs';
-import { diagnoseSummary } from '../src/diagnose.mjs';
+import { buildFixReport } from '../src/crashfix.mjs';
 import { ensureFreshAuth, loadAuth, loginWithDeviceCode } from '../src/auth.mjs';
 import { fmtBytes, c, info, ok, fail, say, step, warn } from '../src/log.mjs';
 
@@ -126,7 +126,15 @@ async function cmdLaunch(positional, flags) {
     info(`classpath 条目：${command.classpath.length}`);
     return;
   }
-  await launch(versionId, options);
+  const child = await launch(versionId, options);
+  // 游戏崩了要让命令行能感知：退出码非 0，并提示生成修复建议
+  const exitCode = typeof child?.exitCode === 'number' ? child.exitCode : null;
+  if (exitCode !== null && exitCode !== 0) {
+    process.exitCode = 1;
+    say();
+    warn(`游戏异常退出（退出码 ${exitCode}）`);
+    info(`运行 mcl diagnose ${versionId} 查看原因与修复建议`);
+  }
 }
 
 async function cmdJava() {
@@ -216,8 +224,9 @@ function cmdHelp() {
   say('    mcl mods <项目ID...> --mc 1.20.1  批量安装模组（自动补前置、并发下载）');
   say('    mcl pack <项目ID> --mc 1.20.1 安装一个 Modrinth 整合包');
   say('    mcl import "<zip路径>"      导入「解压即玩」整合包（合并 + 备份）');
+  say('    mcl importpack "<zip路径>"  把 CurseForge 整合包装成独立实例（实例名=zip 文件名）');
   say('    mcl check                   检查重复模组');
-  say('    mcl diagnose <实例>         崩溃诊断');
+  say('    mcl diagnose <实例> [--write] 崩溃诊断 + 修复建议（--write 导出 Markdown 报告）');
   say('    mcl login                   微软设备码登录');
   say('    mcl list                    列出已安装版本');
   say('    mcl list --remote --limit 30  列出远程版本');
@@ -346,13 +355,29 @@ async function cmdLogin(positional, flags) {
   info('凭证已保存到 ~/.mcl/auth.json（仅 token，不含密码）');
 }
 
-async function cmdDiagnose(positional) {
+async function cmdDiagnose(positional, flags = {}) {
   const installed = installedVersions();
-  const target = positional[1] ?? installed[0];
+  const target = resolveInstalled(positional[1] ?? installed[0]);
   if (!target) throw new Error('还没有安装任何版本');
-  const result = diagnoseSummary(target);
+  const report = buildFixReport(target, { write: Boolean(flags.write) });
   say();
-  for (const line of result.summary.split('\n')) say(`  ${line}`);
+  say(`  ${c.bold(report.instance)}  ${report.loader ?? '原版'}  Minecraft ${report.mc ?? '?'}`);
+  if (report.crashed) warn(`游戏异常退出${report.exitCode !== null ? `（退出码 ${report.exitCode}）` : ''}`);
+  else warn('没有发现崩溃痕迹');
+  say();
+  say(`  结论：${report.summary}`);
+  for (const cause of report.causes) {
+    say(`  · ${c.bold(cause.title)}（置信度 ${Math.round(cause.confidence * 100)}%）`);
+    if (cause.explanation) say(`      ${c.dim(cause.explanation)}`);
+    for (const line of cause.evidence.slice(0, 2)) say(`      证据：${c.dim(line)}`);
+    for (const fix of cause.fixes ?? []) say(`      修复：${fix.label}${fix.description ? `（${fix.description}）` : ''}`);
+  }
+  if (report.causes.length === 0) {
+    say('  没有命中已知规则，可用 --write 生成完整报告后交给 AI 分析。');
+  }
+  say();
+  if (report.reportPath) info(`报告已保存：${report.reportPath}`);
+  else info('加 --write 可把完整 Markdown 报告保存到实例的 crash-reports/ 目录。');
   say();
 }
 
@@ -438,7 +463,7 @@ async function main() {
       break;
     case 'diagnose':
     case 'why':
-      await cmdDiagnose(positional);
+      await cmdDiagnose(positional, flags);
       break;
     case 'login':
       await cmdLogin(positional, flags);
