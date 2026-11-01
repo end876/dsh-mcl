@@ -12,6 +12,7 @@ import { ensureJava, listJava } from './java.mjs';
 import { applyModAction, buildFixReport, crashSummary, detectCrash } from './crashfix.mjs';
 import { pickSource } from './source.mjs';
 import { inspectArchiveFile, inferMcFromNames } from './mods.mjs';
+import { EXPORTS_DIR } from './exportpack.mjs';
 import { diagnoseSummary } from './diagnose.mjs';
 import { ensureFreshAuth, loadAuth, loginWithDeviceCode } from './auth.mjs';
 import { listLoaderVersions, detectLoader as detectLoaderId, loaderLabelFor } from './loader.mjs';
@@ -459,6 +460,10 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
       for (const raw of text.split(/\r?\n/)) {
         const line = raw.replace(/\r/g, '').replace(/\x1b\[[0-9;]*m/g, '').trimEnd();
         if (!line) continue;
+        if (line.startsWith('EXPORT:')) {
+          job.meta = { ...(job.meta ?? {}), exportFile: line.slice('EXPORT:'.length).trim() };
+          continue; // 这类内部标记不进日志
+        }
         broadcast({ type: 'line', kind, line });
         // 从 CLI 的进度行里抽百分比：整百分点变化才推一次，别每行都广播
         const match = line.match(/(\d{1,3}(?:\.\d+)?)\s*%/);
@@ -473,7 +478,7 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
           .trim()
           .slice(0, 120);
         job.progress = { percent: pct, text: detail };
-        broadcast({ type: 'job', kind, status: 'running', meta, progress: job.progress });
+        broadcast({ type: 'job', kind, status: 'running', meta: job.meta, progress: job.progress });
       }
     };
     child.stdout.on('data', flush);
@@ -489,7 +494,7 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
       }
       if (job.meta?.invalidateJava) javaCache = null; // Java 装完后状态缓存要刷新
       invalidateVersions(); // 装完/启动完版本列表可能变了，别让缓存拖着
-      broadcast({ type: 'job', kind, status, meta });
+      broadcast({ type: 'job', kind, status, meta: job.meta });
       broadcast({ type: 'refresh' });
     };
 
@@ -1271,6 +1276,82 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         } catch (error) {
           sendJson(res, 200, { text: '', error: error.message });
         }
+        return;
+      }
+
+      if (route === '/api/instance/export' && req.method === 'POST') {
+        const body = await readBody(req);
+        const instance = String(body.instance ?? '').trim();
+        if (!instance || !safeVersionDir(instance)) {
+          sendJson(res, 404, { error: `找不到实例 ${instance}` });
+          return;
+        }
+        const includeSaves = Boolean(body.includeSaves);
+        try {
+          runJob('install', ['export', instance, ...(includeSaves ? ['--include-saves'] : [])], {
+            version: `导出 ${instance}`,
+            label: `导出实例 → ${instance}`,
+            exporting: true,
+          });
+        } catch (jobError) {
+          sendJson(res, 409, { error: jobError.message });
+          return;
+        }
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+
+      if (route === '/api/instance/delete' && req.method === 'POST') {
+        const body = await readBody(req);
+        const instance = String(body.instance ?? '').trim();
+        const dir = safeVersionDir(instance);
+        if (!dir) {
+          sendJson(res, 404, { error: `找不到实例 ${instance}` });
+          return;
+        }
+        if (jobs.launch?.meta?.version === instance) {
+          sendJson(res, 409, { error: '这个实例正在运行，先停止再删除' });
+          return;
+        }
+        try {
+          const record = readRuntimeRecord(dir);
+          if (record && !record.stopped && (await probeProcess(record.pid)).alive) {
+            sendJson(res, 409, { error: '这个实例的游戏进程还活着，先停止再删除' });
+            return;
+          }
+        } catch {
+          /* 探测失败不阻塞删除 */
+        }
+        try {
+          fs.rmSync(dir, { recursive: true, force: true });
+          invalidateVersions();
+          broadcast({ type: 'refresh' });
+          sendJson(res, 200, { ok: true, message: `已删除 ${instance}` });
+        } catch (error) {
+          sendJson(res, 500, { error: error.message });
+        }
+        return;
+      }
+
+      if (route.startsWith('/api/exports/')) {
+        const name = decodeURIComponent(route.slice('/api/exports/'.length));
+        let target = null;
+        try {
+          target = safeJoin(EXPORTS_DIR, name);
+        } catch {
+          target = null;
+        }
+        if (!target || !fs.existsSync(target) || !fs.statSync(target).isFile()) {
+          sendJson(res, 404, { error: '导出文件不存在' });
+          return;
+        }
+        res.writeHead(200, {
+          ...(res.cors ?? {}),
+          'Content-Type': 'application/zip',
+          'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
+          'Content-Length': fs.statSync(target).size,
+        });
+        fs.createReadStream(target).pipe(res);
         return;
       }
 

@@ -41,6 +41,16 @@
 | 5 | `/api/mod/inspect-path` 指向不存在文件 | ✅ 400，不回显同目录文件名 |
 | 6 | 上述折腾后 `/api/state` | ✅ 200，服务存活 |
 
+## 1.1.1 实例管理（2026-11-01）
+
+| # | 项目 | 结果 |
+| --- | --- | --- |
+| 1 | CLI 导出 | ✅ 生成 manifest.json + overrides/{mods,config,options.txt}，logs/saves 默认排除；加载器识别为 forge 47.4.28 |
+| 2 | 接口导出 | ✅ `/api/instance/export` 起任务，`EXPORT:` 行写入 job.meta，SSE done 事件带 exportFile |
+| 3 | 下载 | ✅ `/api/exports/<file>` 返回 zip（魔数 PK），Content-Disposition attachment |
+| 4 | 删除 | ✅ `/api/instance/delete` 删除目录并刷新版本列表；运行中/进程存活会拒绝 |
+| 5 | 浏览器 UI | ✅ 版本行 启动/导出/删除；导出完成自动下载并 toast；删除有确认弹窗 |
+
 ## 1.1.1 插件收尾（2026-11-01）
 
 | # | 项目 | 结果 |

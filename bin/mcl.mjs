@@ -13,9 +13,10 @@ import { installMod, installModpack, installModsBatch } from '../src/modrinth.mj
 import { scanAll, scanInstance } from '../src/dupes.mjs';
 import { importArchive } from '../src/import.mjs';
 import { importModpackZip } from '../src/importpack.mjs';
+import { exportInstance } from '../src/exportpack.mjs';
 import { buildFixReport } from '../src/crashfix.mjs';
 import { ensureFreshAuth, loadAuth, loginWithDeviceCode } from '../src/auth.mjs';
-import { fmtBytes, c, info, ok, fail, say, step, warn } from '../src/log.mjs';
+import { Progress, fmtBytes, c, info, ok, fail, say, step, warn } from '../src/log.mjs';
 
 function parseArgs(argv) {
   const positional = [];
@@ -234,6 +235,7 @@ function cmdHelp() {
   say('    mcl pack <项目ID> --mc 1.20.1 安装一个 Modrinth 整合包');
   say('    mcl import "<zip路径>"      导入「解压即玩」整合包（合并 + 备份）');
   say('    mcl importpack "<zip路径>"  把 CurseForge 整合包装成独立实例（实例名=zip 文件名）');
+  say('    mcl export <实例>           把本地实例导出为整合包（--include-saves 连存档一起）');
   say('    mcl check                   检查重复模组');
   say('    mcl diagnose <实例> [--write] 崩溃诊断 + 修复建议（--write 导出 Markdown 报告）');
   say('    mcl login                   微软设备码登录');
@@ -403,6 +405,27 @@ async function cmdImportPack(positional, flags) {
   info(`现在可以启动：mcl launch "${result.instance}"`);
 }
 
+async function cmdExport(positional, flags = {}) {
+  const instance = positional[1] ?? positional[2];
+  if (!instance) throw new Error('用法：mcl export <实例名> [--include-saves]');
+  const includeSaves = flags['include-saves'] === true || flags['include-saves'] === 'true';
+  let progress = null;
+  const result = await exportInstance(String(instance).replace(/^["'“”「」]+|["'“”「」]+$/g, ''), {
+    includeSaves,
+    onPlan: (plan) => {
+      step(`导出 ${plan.files} 个文件（${fmtBytes(plan.totalBytes)}）`);
+      progress = new Progress('导出', plan.totalBytes);
+    },
+    onProgress: (size) => progress?.add(size),
+  });
+  progress?.finish(`已写入 ${result.files} 个文件`);
+  say();
+  ok(`导出完成：${result.file}`);
+  info(`文件：${result.path}`);
+  if (result.loader) info(`加载器：${result.loader} ${result.loaderVersion ?? ''} / Minecraft ${result.mcVersion}`);
+  console.log(`EXPORT:${result.file}`);
+}
+
 async function cmdImport(positional) {
   const target = positional[1] ?? positional[2];
   if (!target) throw new Error('用法：mcl import <整合包zip路径>');
@@ -470,6 +493,10 @@ async function main() {
     case 'importpack':
     case 'packinstall':
       await cmdImportPack(positional, flags);
+      break;
+    case 'export':
+    case 'exportpack':
+      await cmdExport(positional, flags);
       break;
     case 'diagnose':
     case 'why':

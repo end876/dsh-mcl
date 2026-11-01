@@ -888,6 +888,11 @@ body[data-theme="pixel"][data-bg="image"] .appearance-page {
 .group[open] summary::before { transform: rotate(90deg); }
 .group summary .count { margin-left: auto; font-size: 10px; }
 .group-items { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.head-actions { display: flex; align-items: center; gap: 10px; }
+.check-inline { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.version-actions { display: flex; gap: 6px; align-items: center; flex: none; }
+.danger-ghost { color: var(--danger, #ff6b6b); }
+.danger-ghost:hover { border-color: var(--danger, #ff6b6b); }
 .version-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid transparent; cursor: pointer; }
 .version-item:hover { background: var(--panel-2); }
 .version-item.selected { border-color: var(--accent-line); background: var(--accent-soft); }

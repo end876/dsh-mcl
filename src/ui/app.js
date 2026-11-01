@@ -10,6 +10,7 @@ const ui = {
   pickerSearch: $('#picker-search'),
   pickerList: $('#picker-list'),
   btnRefresh: $('#btn-refresh'),
+  exportSaves: $('#export-saves'),
   btnInstall: $('#btn-install'),
   btnLaunch: $('#btn-launch'),
   btnStop: $('#btn-stop'),
@@ -201,11 +202,18 @@ function renderVersions() {
             ${info.mods > 0 ? `<span class="tag">${info.mods} mod</span>` : ''}
           </div>
         </div>
-        <button class="ghost" data-role="run">启动</button>
+        <div class="version-actions">
+          <button class="ghost" data-role="run">启动</button>
+          <button class="ghost" data-role="export" title="导出为整合包">导出</button>
+          <button class="ghost danger-ghost" data-role="delete" title="删除实例（不可恢复）">删除</button>
+        </div>
       `;
       row.addEventListener('click', (event) => {
         selectVersion(id);
-        if (event.target.closest('[data-role="run"]')) doLaunch();
+        const role = event.target.closest('[data-role]')?.dataset.role;
+        if (role === 'run') doLaunch();
+        else if (role === 'export') exportInstance(id);
+        else if (role === 'delete') deleteInstance(id);
       });
       items.appendChild(row);
     }
@@ -465,6 +473,37 @@ async function doLaunch() {
     toast(`正在启动 ${version}`);
   } catch (error) {
     toast(error.message, true);
+  }
+}
+
+async function exportInstance(id) {
+  try {
+    await api('/api/instance/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instance: id, includeSaves: Boolean(ui.exportSaves?.checked) }),
+    });
+    toast(`开始导出「${id}」${ui.exportSaves?.checked ? '（含存档）' : ''}，完成后会自动下载`);
+  } catch (error) {
+    toast(`导出失败：${error.message}`, true);
+  }
+}
+
+async function deleteInstance(id) {
+  const ok = window.confirm(
+    `确定删除实例「${id}」？\n\n它的模组、配置和存档都会被删除，无法恢复。`,
+  );
+  if (!ok) return;
+  try {
+    await api('/api/instance/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instance: id }),
+    });
+    toast(`已删除「${id}」`);
+    await refresh();
+  } catch (error) {
+    toast(`删除失败：${error.message}`, true);
   }
 }
 
@@ -1950,7 +1989,18 @@ function bindEvents() {
       if (data.kind === 'install') {
         store.state.installing = data.status === 'running';
         ui.btnInstall.disabled = store.state.installing;
-        if (data.status === 'done') toast(`${data.meta?.version ?? ''} 安装完成`);
+        if (data.status === 'done' && data.meta?.exportFile) {
+          const name = data.meta.exportFile;
+          const link = document.createElement('a');
+          link.href = `/api/exports/${encodeURIComponent(name)}`;
+          link.download = name;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          toast(`导出完成：${name}`);
+        } else if (data.status === 'done') {
+          toast(`${data.meta?.version ?? ''} 安装完成`);
+        }
         if (data.status === 'error') toast('安装失败，看日志', true);
       }
       if (data.kind === 'launch') {

@@ -1532,6 +1532,7 @@ window.__ModuleLoader__.load({
       const [memory, setMemory] = useState(() => normalizeMemory(readPref('mcl.memory', '2G')) || '2G');
       const [busy, setBusy] = useState(false);
       const [notice, setNotice] = useState('');
+      const [manageNotice, setManageNotice] = useState('');
       // 崩溃修复：手动诊断结果 { report } | { legacy } | { error }，以及执行修复时的忙碌态
       const [crashInfo, setCrashInfo] = useState(null);
       const [crashBusy, setCrashBusy] = useState(false);
@@ -1636,6 +1637,33 @@ window.__ModuleLoader__.load({
 
       function stop() {
         act(() => post('/api/stop'));
+      }
+
+      async function exportSelected() {
+        if (!version) return;
+        setManageNotice('');
+        try {
+          await post('/api/instance/export', { instance: version });
+          setManageNotice('已开始导出，完成后在 ~/.mcl/exports/ 里');
+        } catch (error) {
+          setManageNotice(error.message);
+        }
+      }
+
+      async function deleteSelected() {
+        if (!version) return;
+        const ok = window.confirm(
+          `确定删除实例「${version}」？\n\n它的模组、配置和存档都会被删除，无法恢复。`,
+        );
+        if (!ok) return;
+        setManageNotice('');
+        try {
+          await post('/api/instance/delete', { instance: version });
+          setManageNotice('已删除');
+          await reload();
+        } catch (error) {
+          setManageNotice(error.message);
+        }
       }
 
       /** 手动崩溃诊断：新接口 /api/crashfix，失败回退旧 /api/diagnose */
@@ -2063,6 +2091,21 @@ window.__ModuleLoader__.load({
                   authUsable(state?.auth) ? '启动游戏（正版）' : '启动游戏',
                 ),
             h('span', { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)' } }, notice),
+          ),
+          h(
+            'div',
+            { style: { ...S.row, marginTop: 8, alignItems: 'center' } },
+            h(
+              'button',
+              { type: 'button', style: S.ghost, onClick: exportSelected, disabled: !version || busy },
+              '导出为整合包',
+            ),
+            h(
+              'button',
+              { type: 'button', style: S.ghost, onClick: deleteSelected, disabled: !version || busy },
+              '删除实例',
+            ),
+            h('span', { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)' } }, manageNotice),
           ),
           job
             ? h(
