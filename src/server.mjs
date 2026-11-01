@@ -1031,6 +1031,11 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
           .replace(/^["'“”「」『』\s]+|["'“”「」『』\s]+$/g, '')
           .replace(/[\u00a0\u3000]/g, ' ');
         const target = path.resolve(raw);
+        if (!isInside(GAME_DIR, target)) {
+          // 只允许识别游戏目录内的文件，外部文件走拖入/选择（上传）通道
+          sendJson(res, 400, { error: '只能识别游戏目录内的文件；外部文件请直接拖进窗口或点「选择文件」' });
+          return;
+        }
         if (!raw || !fs.existsSync(target)) {
           // 不回显同目录的文件名（避免被当成目录枚举接口）
           sendJson(res, 400, { error: `文件不存在：${target}` });

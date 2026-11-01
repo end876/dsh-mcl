@@ -47,6 +47,28 @@ function readAt(fd, offset, length) {
   return got === length ? buf : buf.subarray(0, got);
 }
 
+// 单个条目解压上限：防解压炸弹把内存打满（合理的 jar / natives / JRE 文件远小于 1GB）
+const MAX_INFLATED_BYTES = 1024 ** 3;
+
+/** 解压条目并核对声明大小：超过 entry.size 直接由 zlib 截断报错 */
+function inflateEntry(entry, data) {
+  if (entry.method === 0) return data;
+  if (entry.method !== 8) throw new Error(`不支持的压缩方式 ${entry.method}：${entry.name}`);
+  const expected = Number(entry.size);
+  if (!Number.isFinite(expected) || expected < 0) throw new Error(`条目大小不合法：${entry.name}`);
+  if (expected > MAX_INFLATED_BYTES) throw new Error(`条目解压后超过 1GB，拒绝：${entry.name}`);
+  let out;
+  try {
+    out = expected > 0 ? zlib.inflateRawSync(data, { maxOutputLength: expected }) : zlib.inflateRawSync(data);
+  } catch (error) {
+    throw new Error(`解压失败或超出声明大小（${entry.name}）：${error.message}`);
+  }
+  if (out.length !== expected) {
+    throw new Error(`解压后大小不符（声明 ${expected}，实际 ${out.length}）：${entry.name}`);
+  }
+  return out;
+}
+
 /**
  * 文件版 ZIP 读取器：只把「尾部 EOCD + 中央目录」读进内存，条目按需从磁盘读。
  * 1GB+ 的整合包不会再把整个文件读进 Node 内存。
@@ -90,9 +112,7 @@ export function openZipFile(file) {
       const extraLen = local.readUInt16LE(28);
       const start = entry.localOffset + 30 + nameLen + extraLen;
       const data = readAt(fd, start, entry.compSize);
-      if (entry.method === 0) return data;
-      if (entry.method === 8) return zlib.inflateRawSync(data);
-      throw new Error(`不支持的压缩方式 ${entry.method}：${entry.name}`);
+      return inflateEntry(entry, data);
     }
 
     return {
@@ -157,8 +177,7 @@ export function openZipBuffer(buf, label = 'memory.zip') {
     const start = local + 30 + nameLen + extraLen;
     const data = buf.subarray(start, start + entry.compSize);
     if (entry.method === 0) return Buffer.from(data);
-    if (entry.method === 8) return zlib.inflateRawSync(data);
-    throw new Error(`不支持的压缩方式 ${entry.method}：${entry.name}`);
+    return inflateEntry(entry, data);
   }
 
   return {

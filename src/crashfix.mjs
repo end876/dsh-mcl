@@ -1232,6 +1232,20 @@ function timestampTag() {
  * 所有路径都限定在实例的 mods/ 目录内，拒绝越界。
  * @param {string} dir 实例目录
  */
+/** 移除模组时的备份目录只保留最近 5 个，避免无限堆积 */
+function pruneModBackups(dir, keep = 5) {
+  try {
+    const backups = fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith('mods-backup-'))
+      .map((entry) => ({ name: entry.name, at: fs.statSync(path.join(dir, entry.name)).mtimeMs }))
+      .sort((a, b) => b.at - a.at);
+    for (const old of backups.slice(keep)) fs.rmSync(path.join(dir, old.name), { recursive: true, force: true });
+  } catch {
+    /* 清理失败不影响主流程 */
+  }
+}
+
 export function applyModAction(dir, kind, payload = {}) {
   const modsDir = path.join(dir, 'mods');
   const file = assertPlainFileName(payload.jar);
@@ -1255,6 +1269,7 @@ export function applyModAction(dir, kind, payload = {}) {
     const backupDir = path.join(dir, `mods-backup-${timestampTag()}`);
     ensureDir(backupDir);
     fs.renameSync(full, path.join(backupDir, path.basename(full)));
+    pruneModBackups(dir);
     return { ok: true, message: `已移除 ${file}（备份在 ${path.basename(backupDir)}，可恢复）` };
   }
   throw new Error(`不支持的 mod 动作：${kind}`);

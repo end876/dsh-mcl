@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-mc-launcher",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "type": "module",
   "description": "在 DSH 里启动 Minecraft：可拖动的状态浮窗（日志 / 进度 / 内存 / 登录 / 诊断），设置页管版本、安装与模组库",
