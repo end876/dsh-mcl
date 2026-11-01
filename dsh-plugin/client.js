@@ -73,17 +73,20 @@ window.__ModuleLoader__.load({
       return null;
     }
 
-    async function api(path, init) {
+    async function api(path, init, timeoutMs = 15000) {
       const port = await resolvePort();
       if (!port) throw new Error('启动器服务未启动');
       const controller = new AbortController();
-      const timer = window.setTimeout(() => controller.abort(), 15000);
+      const timer = window.setTimeout(() => controller.abort(), timeoutMs);
       let res;
       try {
         res = await fetch(`${originFor(port)}${path}`, { ...init, signal: controller.signal });
       } catch (error) {
+        if (error?.name === 'AbortError') {
+          // 服务还活着，只是这个操作慢（比如下载 Java），别把端口发现也重置掉
+          throw new Error(`启动器响应超时（${Math.round(timeoutMs / 1000)} 秒）`);
+        }
         portReady = false; // 端口可能变了，下次重新找
-        if (error?.name === 'AbortError') throw new Error('启动器响应超时（15 秒）');
         throw error;
       } finally {
         window.clearTimeout(timer);
@@ -122,16 +125,20 @@ window.__ModuleLoader__.load({
       return body;
     }
 
-    function post(path, payload) {
-      return api(path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload ?? {}),
-      });
+    function post(path, payload, timeoutMs) {
+      return api(
+        path,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload ?? {}),
+        },
+        timeoutMs,
+      );
     }
 
-    function get(path) {
-      return api(path, { method: 'GET' });
+    function get(path, timeoutMs) {
+      return api(path, { method: 'GET' }, timeoutMs);
     }
 
     function readPref(key, fallback) {
@@ -376,6 +383,16 @@ window.__ModuleLoader__.load({
       }
     }
 
+    // 进度更新单独节流：150ms 最多重渲染一次
+    let jobNotifyTimer = 0;
+    function jobNotifySoon() {
+      if (jobNotifyTimer) return;
+      jobNotifyTimer = window.setTimeout(() => {
+        jobNotifyTimer = 0;
+        evNotify();
+      }, 150);
+    }
+
     // 日志行很密：合并到下一帧统一通知（最多 ~16ms 一次）
     let evNotifyHandle = 0;
     let evNotifyIsFrame = false;
@@ -432,8 +449,12 @@ window.__ModuleLoader__.load({
             evStore.jobs[kind] = { status: payload.status, meta: payload.meta ?? null, progress: null };
           }
         }
-        flushEvNotify();
-        evNotify();
+        if (payload.status === 'running' && payload.progress) {
+          jobNotifySoon(); // 只有进度在变：节流到 150ms 一次
+        } else {
+          flushEvNotify();
+          evNotify();
+        }
         if (payload.status !== 'running') refreshLauncher();
         return;
       }
@@ -1220,7 +1241,7 @@ window.__ModuleLoader__.load({
         setError('');
         try {
           // 先分析：没适配版本 / 互相不兼容都先拦一下
-          const analysis = await post('/api/mods/analyze', { projectIds: ids, mcVersion: mc, loader: loader ?? 'fabric' });
+          const analysis = await post('/api/mods/analyze', { projectIds: ids, mcVersion: mc, loader: loader ?? 'fabric' }, 60000);
           setReview(analysis);
           if ((analysis.conflicts ?? []).length > 0 && !confirming) {
             setConfirming(true);
@@ -1666,7 +1687,7 @@ window.__ModuleLoader__.load({
           setNotice(String(payload.hint || fix.description || fix.label || ''));
           return;
         }
-        const serverKinds = ['disable-mod', 'disable-mods', 'enable-mod', 'remove-mod', 'open-report', 'open-log', 'install-java'];
+        const serverKinds = ['disable-mod', 'enable-mod', 'remove-mod', 'open-report', 'open-log', 'install-java'];
         if (!serverKinds.includes(kind)) {
           setNotice(`不认识这个修复动作：${kind || '（缺少 kind）'}`);
           return;
@@ -1674,7 +1695,7 @@ window.__ModuleLoader__.load({
         if (kind === 'install-java') setNotice('正在准备 Java，下载可能比较慢，请稍等…');
         setCrashBusy(true);
         try {
-          const result = await post('/api/crashfix/apply', { instance: target, kind, payload });
+          const result = await post('/api/crashfix/apply', { instance: target, kind, payload }, 600000);
           if (result && result.ok === false) {
             setNotice(String(result.message || '服务端没有执行这个动作'));
           } else {
@@ -2491,7 +2512,7 @@ window.__ModuleLoader__.load({
           if (dragRef.current || document.hidden) return;
           syncDelta();
           ensureVisible();
-        }, 2000);
+        }, 4000);
         return () => window.clearInterval(timer);
       }, [embedded]);
 
@@ -2816,7 +2837,7 @@ window.__ModuleLoader__.load({
         }
 
         // 剩下的应该都由服务端做（disable/remove mod、打开报告/日志、装 Java）
-        const serverKinds = ['disable-mod', 'disable-mods', 'enable-mod', 'remove-mod', 'open-report', 'open-log', 'install-java'];
+        const serverKinds = ['disable-mod', 'enable-mod', 'remove-mod', 'open-report', 'open-log', 'install-java'];
         if (!serverKinds.includes(kind)) {
           setCrashNotice(`不认识这个修复动作：${kind || '（缺少 kind）'}`);
           return;
@@ -2824,7 +2845,7 @@ window.__ModuleLoader__.load({
         if (kind === 'install-java') setCrashNotice('正在准备 Java，下载可能比较慢，请稍等…');
         setCrashBusy(true);
         try {
-          const result = await post('/api/crashfix/apply', { instance: target, kind, payload });
+          const result = await post('/api/crashfix/apply', { instance: target, kind, payload }, 600000);
           if (result && result.ok === false) {
             setCrashNotice(String(result.message || '服务端没有执行这个动作'));
           } else {
