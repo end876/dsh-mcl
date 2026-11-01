@@ -1117,6 +1117,31 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         return;
       }
 
+      if (route === '/api/open-url' && req.method === 'POST') {
+        // 给插件打开微软设备码登录页用：只放行 https 的微软域名，避免变成任意 URL 打开器
+        const body = await readBody(req);
+        let target = null;
+        try {
+          target = new URL(String(body.url ?? ''));
+        } catch {
+          target = null;
+        }
+        const host = target?.hostname?.toLowerCase() ?? '';
+        const allowed =
+          target?.protocol === 'https:' &&
+          (host === 'microsoft.com' ||
+            host.endsWith('.microsoft.com') ||
+            host.endsWith('.microsoftonline.com') ||
+            host.endsWith('.microsoftlive.com'));
+        if (!allowed) {
+          sendJson(res, 400, { error: '只允许打开微软登录相关页面' });
+          return;
+        }
+        openBrowser(target.toString(), false);
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+
       if (route === '/api/open-window' && req.method === 'POST') {
         openBrowser(currentUrl, true);
         sendJson(res, 200, { ok: true, url: currentUrl });

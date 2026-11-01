@@ -37,6 +37,7 @@ const ui = {
   msaBox: $('#msa-box'),
   msaLink: $('#msa-link'),
   msaCode: $('#msa-code'),
+  msaOpen: $('#msa-open'),
   msaStatus: $('#msa-status'),
   msaClose: $('#msa-close'),
   btnMsa: $('#btn-msa'),
@@ -1168,6 +1169,13 @@ async function importPack() {
 }
 
 async function startMsaLogin() {
+  // 点按钮是用户手势，先同步开一个空白窗口，拿到设备码后再把窗口导航到微软登录页
+  let popup = null;
+  try {
+    popup = window.open('about:blank', 'mcl-msa-login', 'popup=yes,width=560,height=720');
+  } catch {
+    popup = null;
+  }
   ui.msaBox.hidden = false;
   ui.msaCode.textContent = '------';
   ui.msaStatus.textContent = '正在申请设备码…';
@@ -1178,8 +1186,28 @@ async function startMsaLogin() {
     ui.msaLink.textContent = info.verificationUri;
     ui.msaStatus.textContent = `等待你在网页上完成登录…（${Math.round(info.expiresIn / 60)} 分钟内有效）`;
     savePrefs({ clientId: info.clientId });
+    if (popup && !popup.closed) {
+      try {
+        popup.location.replace(info.verificationUri);
+      } catch {
+        try {
+          popup.location.href = info.verificationUri;
+        } catch {
+          /* ignore */
+        }
+      }
+    } else {
+      toast('浏览器拦截了自动跳转，点「打开登录页」或链接继续');
+    }
+    try {
+      await navigator.clipboard.writeText(info.userCode);
+      toast(`登录代码 ${info.userCode} 已复制`);
+    } catch {
+      /* 剪贴板不可用就算了 */
+    }
   } catch (error) {
     ui.msaStatus.textContent = `申请失败：${error.message}`;
+    if (popup && !popup.closed) popup.close();
   }
 }
 
@@ -1942,6 +1970,10 @@ function bindEvents() {
   ui.btnInspectPath.addEventListener('click', inspectPath);
   ui.btnPickFile.addEventListener('click', pickFileFromSystem);
   ui.btnMsa.addEventListener('click', startMsaLogin);
+  ui.msaOpen?.addEventListener('click', () => {
+    const href = ui.msaLink.href || 'https://www.microsoft.com/link';
+    window.open(href, '_blank', 'noopener');
+  });
   ui.btnLogout?.addEventListener('click', logout);
   ui.msaClose.addEventListener('click', () => {
     ui.msaBox.hidden = true;

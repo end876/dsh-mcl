@@ -2981,6 +2981,8 @@ window.__ModuleLoader__.load({
         setLoginBusy(true);
         try {
           const info = await post('/api/auth/start');
+          // 直接让服务端打开微软登录页（插件在 DSH 里，拿不到浏览器窗口）
+          post('/api/open-url', { url: info.verificationUri }).catch(() => {});
           setLogin({
             userCode: info.userCode,
             verificationUri: info.verificationUri,
@@ -3362,6 +3364,18 @@ window.__ModuleLoader__.load({
                     ),
                   ),
                   h('div', null, '授权完成后这里会自动变成已登录'),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      onClick: () => {
+                        const url = login.verificationUri || 'https://www.microsoft.com/link';
+                        post('/api/open-url', { url }).catch((error) => setLogin({ error: error.message }));
+                      },
+                      style: { ...S.ghost, marginTop: 4, padding: '3px 10px', fontSize: 11 },
+                    },
+                    '打开登录页',
+                  ),
                   h(
                     'div',
                     { style: { marginTop: 4, opacity: 0.75 } },

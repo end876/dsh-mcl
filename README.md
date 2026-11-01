@@ -1,4 +1,4 @@
-# MCL 启动器（1.1.1）
+# MCL 启动器（1.1.0 · 测试版）
 
 一个**零依赖**的 Node 版 Minecraft 启动器，也是 DeepSeek Harness 的插件：装原版 / Fabric / Quilt /
 Forge / NeoForge、搜装模组与整合包、离线或正版启动，带崩溃诊断和一整套 HTTP 接口。
@@ -10,10 +10,10 @@ Forge / NeoForge、搜装模组与整合包、离线或正版启动，带崩溃�
 >
 > 所以 **CLI 和 HTTP 接口是它的主界面**：DSH 插件是它最常用的客户端，浏览器窗口只是顺手给的。
 
-> **项目状态**：**1.1.1**。1.1 新增崩溃修复助手；1.1.1 修了「整合包被当成模组装进 mods/ 导致装不上」。接口基本稳定，文档里的命令和接口都经过实测；
+> **项目状态**：**1.1.0 测试版**。崩溃修复助手、实例管理、下载进度条、大文件/1GB+ 整合包、正版登录直达；接口基本稳定，文档里的命令和接口都经过实测；
 > 遇到问题欢迎提 issue。玩之前建议先备份存档。
 
-## 特性（1.1.1）
+## 特性（1.1.0）
 
 - ✅ 从 Mojang 官方 / BMCLAPI 镜像自动下载安装**原版**任意版本（auto 选源，失败回退）
 - ✅ 自动补齐 Java 运行时（Adoptium JRE，按版本需求自动选 8 / 17 / 21，走清华镜像）
@@ -192,42 +192,32 @@ mc-launcher/
 
 ## 更新日志
 
-### 1.1.1（2026-11-01）
-
-- **修「整合包无法下载 / 装不上」**：浏览器版模组库抽屉把「整合包 / 光影」页签的安装错误地发给了
-  `/api/mods/install-batch`，结果把 `.mrpack` 当成模组下载进实例的 `mods/` 目录
-  （实测复现：`Fabulously.Optimized-5.4.1.mrpack` 被写进 `mods/`），既装不上又白下几十 MB
-  - 抽屉按页签分派：整合包 → `/api/pack/install`（下载 mrpack + 自动建独立实例）、
-    光影 → `/api/shader/install`、模组保持批量安装
-  - 切换页签时清空勾选，避免模组和整合包 ID 混装；安装按钮文案随页签变化
-- **服务端守卫**：`/api/mod/install`、`/api/mods/install-batch` 先查项目类型，
-  整合包/光影直接 400 并提示去正确页签；安装模块内再加 `.mrpack` 文件兜底（CLI `mcl mod` / `mcl mods` 也会挡）
-- 验证：新增 `test-fixtures/test-pack-guard.mjs`（7 项）、`test-fixtures/test-pack-route.mjs`（6 项）
-
-### 1.1.0（2026-10-31）
+### 1.1.0 · 测试版（2026-11-01）
 
 - **崩溃修复助手**：崩溃后自动读取 crash-report / latest.log / launcher-console.log / 运行时快照 / mods 元数据，
   生成「结论 + 原因（带证据行）+ 可执行修复动作」的结构化报告，并落盘 Markdown
-  - 覆盖 12 类原因：内存不足、Mixin 冲突、重复模组、缺前置、Java 版本、加载器版本、
-    显卡 / OpenGL、模组文件损坏、文件权限、JVM 参数、原生崩溃（按退出码）等
-  - 动作：调内存、禁用 / 恢复 / 移除模组（移除有备份）、自动安装 Java、跳模组库装前置、
-    打开崩溃报告、重新启动；文件动作限定在实例目录内执行
+  - 覆盖 14 类原因（内存不足、Mixin 冲突、重复模组、缺前置、Java 版本、加载器版本、显卡、文件损坏等）
+  - 动作：调内存、禁用 / 恢复 / 移除模组（移除有备份）、自动安装 Java、跳模组库装前置、打开报告、重新启动
 - **实例管理**：版本页每个实例支持「启动 / 导出 / 删除」——导出成 CurseForge 结构整合包
   （`manifest.json` + `overrides/`，默认不含存档，可勾选包含；导出完自动下载），删除需确认且运行中会拒绝
-- **插件稳定性/性能**：进度事件 150ms 合并通知；刷新/重开浮窗从 `lastCrash` 恢复崩溃卡片；
-  「自动安装 Java」改成后台任务（进度走 SSE），不再卡在请求里
-- **拖入大文件后可直接安装**：
-- **超大整合包（1GB+）**：ZIP 读取改成文件版（只读尾部 EOCD + 中央目录，条目按需读盘），
-  1.2GB 逻辑内容的包识别 4ms、内存不涨；上传上限 4GB浏览器拿不到本地路径，所以拖入的文件先流式上传到 `~/.mcl/uploads/`（12 小时过期），
-  识别后能直接「安装为实例」/「一键导入」，装完自动删暂存文件
 - **下载进度条**：安装 / 下载任务从 CLI 输出解析百分比（阶段、已下载 / 总量、百分数），
   浏览器主区顶部和 DSH 浮窗 / 设置页都会显示进度条；启动游戏没有百分比时显示不定进度
+- **大文件 / 超大整合包**：拖入或选择文件后流式上传到 `~/.mcl/uploads/`（12 小时过期），
+  识别后可一键安装 / 导入；ZIP 读取改成文件版（只读尾部 EOCD + 中央目录，条目按需读盘），
+  1.2GB 逻辑内容识别 4ms、内存不涨；上传上限 4GB
+- **正版登录直达**：点「微软登录」自动打开微软登录页并复制设备码（被拦截时可用「打开登录页」按钮）；
+  DSH 插件通过 `/api/open-url` 打开（只允许微软域名）
+- **修「整合包无法下载 / 装不上」**：抽屉按页签分派（整合包 → `/api/pack/install`、光影 → `/api/shader/install`、
+  模组 → 批量安装）；服务端 `/api/mod/install`、`/api/mods/install-batch` 先查项目类型，
+  整合包 / 光影直接 400；模块内再加 `.mrpack` 兜底拦截
+- **插件稳定性 / 性能**：进度事件 150ms 合并通知；刷新 / 重开浮窗从 `lastCrash` 恢复崩溃卡片；
+  「自动安装 Java」改成后台任务（进度走 SSE）；api 默认 30s、崩溃修复 600s 超时
 - **自动触发**：启动任务异常结束（退出码非 0 / 有新崩溃报告）→ 服务端自动诊断并通过 SSE 推送
   `{type:'crash', report}`；浏览器界面和 DSH 插件浮窗自动弹出修复建议，正常退出则清空
-- 新增接口：`/api/crashfix`、`/api/crashfix/apply`、`/api/crash/last`、`/api/mods/toggle`、`/api/reveal`；
-  `/api/state` 增加 `lastCrash`
-- CLI：`mcl diagnose <实例> [--write]` 输出结论与修复建议并导出报告；`mcl launch` 崩溃时退出码非 0
-- 文档：[崩溃修复助手](docs/crash-fix.md)
+- 新增接口：`/api/crashfix`、`/api/crashfix/apply`、`/api/crash/last`、`/api/mods/toggle`、`/api/reveal`、
+  `/api/instance/export`、`/api/exports/<file>`、`/api/instance/delete`、`/api/open-url`
+- CLI：`mcl diagnose <实例> [--write]`、`mcl export <实例> [--include-saves]`、`mcl importpack <zip>`、`mcl java-install <版本>`
+- 文档：[崩溃修复助手](docs/crash-fix.md)、[自定义背景](docs/custom-background.md)
 
 ### 1.0.2（2026-10-31）
 
