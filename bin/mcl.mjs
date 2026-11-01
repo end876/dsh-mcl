@@ -28,7 +28,7 @@ function parseArgs(argv) {
       const eq = body.indexOf('=');
       if (eq >= 0) {
         flags[body.slice(0, eq)] = body.slice(eq + 1);
-      } else if (argv[i + 1] && !argv[i + 1].startsWith(sysFlagPrefix())) {
+      } else if (argv[i + 1] && !argv[i + 1].startsWith('--')) {
         flags[body] = argv[i + 1];
         i += 1;
       } else {
@@ -41,9 +41,6 @@ function parseArgs(argv) {
   return { positional, flags };
 }
 
-function sysFlagPrefix() {
-  return '--';
-}
 
 function sourceNameFrom(flags) {
   return flags.source ?? process.env.MCL_SOURCE ?? 'auto';
