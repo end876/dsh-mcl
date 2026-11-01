@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ensureDir, safeJoin, versionDir } from './paths.mjs';
-import { openZip } from './zip.mjs';
+import { openZipFile } from './zip.mjs';
 import { installedVersions, installVersion } from './install.mjs';
 import { installLoader } from './loader.mjs';
 import { installFabric } from './fabric.mjs';
@@ -33,7 +33,8 @@ function parseLoaderId(id) {
  */
 export async function importModpackZip(zipPath, { name } = {}) {
   if (!fs.existsSync(zipPath)) throw new Error(`文件不存在：${zipPath}`);
-  const zip = openZip(zipPath);
+  const zip = openZipFile(zipPath);
+  try {
   const manifestEntry = zip.entries.find((entry) => !entry.isDir && entry.name === 'manifest.json');
   if (!manifestEntry) {
     throw new Error('不支持的整合包格式：需要 CurseForge 的 manifest.json（解压即玩包请用「导入」）');
@@ -138,4 +139,7 @@ export async function importModpackZip(zipPath, { name } = {}) {
 
   ok(`实例已就绪：${instanceId}（${mods} 个 mod）`);
   return { instance: instanceId, mcVersion, loader, loaderVersion, files: written, mods, missing };
+  } finally {
+    zip.close();
+  }
 }

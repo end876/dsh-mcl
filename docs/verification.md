@@ -50,6 +50,7 @@
 | 3 | 插件进度条 | harness 渲染 + job progress 事件 | ✅ 设置页与浮窗 job 行都出现进度条（63%） |
 | 4 | 整合包路由 | 合并 1.1.1 补丁 | ✅ 抽屉按页签分派（pack→`/api/pack/install`、shader→`/api/shader/install`、mod→batch） |
 
+| 6 | 超大包识别 | 1.2GB 逻辑内容的 CurseForge 包（文件版 ZIP） | ✅ 4ms、RSS +0MB；626MB 真实包路径识别 0.1s |
 | 5 | 拖入大文件安装 | 626MB 包拖入 → 识别 → 点「安装为实例」 | ✅ 暂存 uploadId 生效，实例创建、overrides 落地、暂存文件装完删除 |
 ## 1.1.0 移植验证（2026-10-31）
 

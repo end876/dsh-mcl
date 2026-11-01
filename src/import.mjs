@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { GAME_DIR, ensureDir, safeJoin } from './paths.mjs';
-import { openZip } from './zip.mjs';
+import { openZipFile } from './zip.mjs';
 import { Progress, fmtBytes, info, ok, step, warn } from './log.mjs';
 
 /**
@@ -13,10 +13,13 @@ export async function importArchive(zipPath, { onProgress } = {}) {
   if (!fs.existsSync(zipPath)) throw new Error(`文件不存在：${zipPath}`);
 
   step(`读取压缩包 ${path.basename(zipPath)}`);
-  const zip = openZip(zipPath);
-  const entries = zip.entries.filter(
-    (entry) => !entry.isDir && entry.name.startsWith('.minecraft/'),
-  );
+  const zip = openZipFile(zipPath);
+  try {
+  // 有的压缩工具（Windows 自带）把分隔符写成反斜杠，统一成正斜杠再匹配
+  const entries = zip.entries
+    .filter((entry) => !entry.isDir)
+    .map((entry) => ({ entry, name: entry.name.replace(/\\/g, '/') }))
+    .filter(({ name }) => name.startsWith('.minecraft/'));
   if (entries.length === 0) {
     throw new Error('不是「解压即玩」整合包（包内没有 .minecraft 目录）');
   }
@@ -29,8 +32,8 @@ export async function importArchive(zipPath, { onProgress } = {}) {
   let backedUp = 0;
   let written = 0;
   let rejected = 0;
-  for (const entry of entries) {
-    const rel = entry.name.slice('.minecraft/'.length);
+  for (const { entry, name } of entries) {
+    const rel = name.slice('.minecraft/'.length);
     if (!rel) continue;
     // 条目名来自不可信的整合包：绝对路径 / .. 一律拒绝，别写到游戏目录外面
     let dest;
@@ -89,4 +92,7 @@ export async function importArchive(zipPath, { onProgress } = {}) {
     warn('没有在包里找到 versions 目录，可能不是完整的整合包');
   }
   return { versions: versionIds, files: written, main: mainVersion };
+  } finally {
+    zip.close();
+  }
 }

@@ -11,7 +11,7 @@ import { RUNTIME_NAME } from './launch.mjs';
 import { ensureJava, listJava } from './java.mjs';
 import { applyModAction, buildFixReport, crashSummary, detectCrash } from './crashfix.mjs';
 import { pickSource } from './source.mjs';
-import { inspectArchive, inferMcFromNames } from './mods.mjs';
+import { inspectArchiveFile, inferMcFromNames } from './mods.mjs';
 import { diagnoseSummary } from './diagnose.mjs';
 import { ensureFreshAuth, loadAuth, loginWithDeviceCode } from './auth.mjs';
 import { listLoaderVersions, detectLoader as detectLoaderId, loaderLabelFor } from './loader.mjs';
@@ -1035,8 +1035,7 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
           sendJson(res, 400, { error: '这是一个目录，请选文件' });
           return;
         }
-        const buffer = fs.readFileSync(target);
-        const result = inspectArchive(buffer, path.basename(target));
+        const result = inspectArchiveFile(target, path.basename(target));
         sendJson(res, 200, result);
         return;
       }
@@ -1089,8 +1088,7 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
             });
             req.pipe(out);
           });
-          const buffer = fs.readFileSync(tmp);
-          const result = inspectArchive(buffer, name);
+          const result = inspectArchiveFile(tmp, name);
           sendJson(res, 200, { ...result, uploadId: discard ? null : uploadId, uploadName: name });
         } catch (error) {
           sendJson(res, 400, { error: error.message });

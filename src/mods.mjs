@@ -1,4 +1,4 @@
-import { openZipBuffer } from './zip.mjs';
+import { openZipBuffer, openZipFile } from './zip.mjs';
 
 export const LOADER_LABELS = {
   fabric: 'Fabric',
@@ -149,14 +149,7 @@ function pickDeps(depends = {}) {
     .map(([id, range]) => ({ id, range: typeof range === 'string' ? range : null }));
 }
 
-export function inspectArchive(buf, fileName = '') {
-  let zip;
-  try {
-    zip = openZipBuffer(buf, fileName);
-  } catch (error) {
-    throw new Error(`无法读取压缩包：${error.message}`);
-  }
-
+function inspectZip(zip, fileName) {
   const names = new Set(zip.entries.map((e) => e.name));
   const modpack = detectModpack(zip);
   if (modpack) return { file: fileName, ...modpack, hint: buildHint(modpack) };
@@ -291,6 +284,35 @@ export function inspectArchive(buf, fileName = '') {
     loaderLabel: '未知',
     hint: '没找到 fabric.mod.json / mods.toml，可能不是模组，或者是资源包/光影。',
   };
+}
+
+/** 内存版：小文件 / 测试直接用 buffer */
+export function inspectArchive(buf, fileName = '') {
+  let zip;
+  try {
+    zip = openZipBuffer(buf, fileName);
+  } catch (error) {
+    throw new Error(`无法读取压缩包：${error.message}`);
+  }
+  return inspectZip(zip, fileName);
+}
+
+/**
+ * 文件版：只读 zip 尾部 + 中央目录，条目按需读盘。
+ * 1GB+ 的整合包不会把整个文件读进内存。
+ */
+export function inspectArchiveFile(file, fileName = '') {
+  let zip;
+  try {
+    zip = openZipFile(file);
+  } catch (error) {
+    throw new Error(`无法读取压缩包：${error.message}`);
+  }
+  try {
+    return inspectZip(zip, fileName);
+  } finally {
+    zip.close();
+  }
 }
 
 function buildHint(info) {
