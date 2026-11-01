@@ -73,7 +73,7 @@ window.__ModuleLoader__.load({
       return null;
     }
 
-    async function api(path, init, timeoutMs = 15000) {
+    async function api(path, init, timeoutMs = 30000) {
       const port = await resolvePort();
       if (!port) throw new Error('启动器服务未启动');
       const controller = new AbortController();
@@ -1579,6 +1579,31 @@ window.__ModuleLoader__.load({
         writePref('mcl.memory', memory);
       }, [player, memory]);
 
+      // 刷新/重新打开设置页时，从 /api/state.lastCrash 恢复上一次崩溃报告
+      const settingsCrashHydrated = useRef(false);
+      useEffect(() => {
+        if (settingsCrashHydrated.current) return;
+        const summary = state?.lastCrash;
+        if (!summary || !summary.instance) return;
+        settingsCrashHydrated.current = true;
+        post('/api/crashfix', { instance: summary.instance }, 60000)
+          .then((data) => {
+            if (data?.report && typeof data.report === 'object') setCrashInfo({ report: data.report });
+          })
+          .catch(() => {
+            /* 报告拉不到就保持空 */
+          });
+      }, [state?.lastCrash]);
+
+      // 切实例后旧实例的崩溃报告不再适用
+      const settingsPrevVersion = useRef('');
+      useEffect(() => {
+        if (settingsPrevVersion.current && settingsPrevVersion.current !== version) {
+          setCrashInfo(null);
+        }
+        settingsPrevVersion.current = version;
+      }, [version]);
+
       const act = useCallback(
         async (fn) => {
           setBusy(true);
@@ -2495,6 +2520,46 @@ window.__ModuleLoader__.load({
         setCrashOpen(false);
         setCrashNotice('');
       }, [events.crash]);
+
+      // 浮窗重新挂载时（页面刷新/重新显示），从 /api/state.lastCrash 恢复上次崩溃
+      const panelCrashHydrated = useRef(false);
+      useEffect(() => {
+        if (panelCrashHydrated.current) return;
+        if (events.crash && typeof events.crash === 'object') {
+          panelCrashHydrated.current = true;
+          return;
+        }
+        const summary = state?.lastCrash;
+        if (!summary || !summary.instance) return;
+        panelCrashHydrated.current = true;
+        post('/api/crashfix', { instance: summary.instance }, 60000)
+          .then((data) => {
+            const report = data?.report;
+            if (report && typeof report === 'object' && report.crashed !== false) {
+              setCrashReport(report);
+              setCrashOpen(false);
+            }
+          })
+          .catch(() => {
+            /* 拉不到就保持空 */
+          });
+      }, [events.crash, state?.lastCrash]);
+
+      // 切实例后旧实例的崩溃卡片不再适用（首次自动选中实例不算切换）
+      const panelPrevVersion = useRef('');
+      useEffect(() => {
+        if (
+          panelPrevVersion.current &&
+          panelPrevVersion.current !== version &&
+          crashReport?.instance &&
+          crashReport.instance !== version
+        ) {
+          setCrashReport(null);
+          setCrashOpen(false);
+          setCrashNotice('');
+        }
+        panelPrevVersion.current = version;
+      }, [version, crashReport?.instance]);
 
       useEffect(() => {
         const onResize = () => {

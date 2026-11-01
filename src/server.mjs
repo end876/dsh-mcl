@@ -487,6 +487,7 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
       if (job.meta?.stagedFile) {
         fs.promises.unlink(job.meta.stagedFile).catch(() => {});
       }
+      if (job.meta?.invalidateJava) javaCache = null; // Java 装完后状态缓存要刷新
       invalidateVersions(); // 装完/启动完版本列表可能变了，别让缓存拖着
       broadcast({ type: 'job', kind, status, meta });
       broadcast({ type: 'refresh' });
@@ -1423,9 +1424,22 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
               sendJson(res, 400, { error: 'Java 大版本不合法' });
               return;
             }
-            const java = await ensureJava(major, { autoDownload: true });
-            javaCache = null; // 装完 Java 让状态缓存刷新
-            sendJson(res, 200, { ok: true, message: `已准备好 Java ${java.major}：${java.exe}` });
+            // 下载 Java 可能要几分钟：别挂在请求里，改成后台任务（进度走 SSE）
+            try {
+              runJob('install', ['java-install', String(major)], {
+                version: `Java ${major}`,
+                label: `安装 Java ${major}`,
+                invalidateJava: true,
+              });
+            } catch (jobError) {
+              sendJson(res, 409, { error: jobError.message });
+              return;
+            }
+            sendJson(res, 200, {
+              ok: true,
+              running: true,
+              message: `已开始下载 Java ${major}，进度看安装日志`,
+            });
             return;
           }
           // 调内存 / 重试启动 / 去模组库搜索这些动作归界面执行

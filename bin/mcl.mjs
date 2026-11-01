@@ -5,7 +5,7 @@ import { GAME_DIR, LIBRARIES_DIR, ASSETS_DIR, IS_WINDOWS, OS_NAME, exists, versi
 import { pickSource, createSource } from '../src/source.mjs';
 import { installedVersions, installVersion, readLocalVersionJson } from '../src/install.mjs';
 import { buildCommand, launch, printCommand } from '../src/launch.mjs';
-import { listJava, findJava } from '../src/java.mjs';
+import { listJava, findJava, ensureJava } from '../src/java.mjs';
 import { startGui } from '../src/server.mjs';
 import { installFabric } from '../src/fabric.mjs';
 import { installLoader, listLoaderVersions, detectLoader as detectLoaderId, loaderLabelFor } from '../src/loader.mjs';
@@ -150,6 +150,15 @@ async function cmdJava() {
   say();
 }
 
+async function cmdJavaInstall(positional) {
+  const major = Number(positional[1] ?? 17);
+  if (!Number.isFinite(major) || major < 8 || major > 25) throw new Error('用法：mcl java-install <大版本，如 17>');
+  step(`准备 Java ${major}`);
+  const java = await ensureJava(major, { autoDownload: true });
+  say();
+  ok(`Java ${java.major} 已就绪：${java.exe}`);
+}
+
 async function cmdInfo(positional) {
   const id = resolveInstalled(positional[1]);
   if (!id || !readLocalVersionJson(id)) {
@@ -233,6 +242,7 @@ function cmdHelp() {
   say('    mcl launch <版本>           离线启动（加 --auth 用正版身份）');
   say('    mcl info <版本>             查看版本信息');
   say('    mcl java                    列出本机 Java');
+  say('    mcl java-install <大版本>   下载/准备指定大版本的 Java（崩溃修复后台用）');
   say('    mcl doctor                  环境与下载源自检');
   say();
   say('  启动参数：');
@@ -486,6 +496,10 @@ async function main() {
       break;
     case 'java':
       await cmdJava();
+      break;
+    case 'java-install':
+    case 'javainstall':
+      await cmdJavaInstall(positional);
       break;
     case 'info':
       await cmdInfo(positional);
