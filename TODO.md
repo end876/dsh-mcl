@@ -159,9 +159,9 @@
 ## ⬜ 待办（按优先级）
 
 ### P0
-- [ ] **zip 流式读取**：`zip.mjs` 目前整文件读入内存（1.4GB 包峰值 1.4GB）。
-      改为 fd + `readSync` 按需读：先读中央目录，再按偏移读条目；API 变异步，
-      调用方（install / import / mods / mrpack）跟改。
+- [x] **ZIP 文件版读取**：`zip.mjs` 新增 `openZipFile`（只读尾部 EOCD + 中央目录，条目按需读），
+      inspect / importpack / import / extractZip 已切过去（1.2GB 逻辑内容识别 4ms、内存不涨）；
+      剩余 loader 读 jar、mrpack 解包仍走内存版（都是小文件，暂不动）。
 
 ### P1
 - [ ] **版本目录解析收口**：`findVersionDir` / `readLocalVersionJson` / `installedVersions`
@@ -179,14 +179,13 @@
 - [ ] Modrinth 限流：元数据请求单独限流（并发上限），退避改为指数退避。
 - [ ] 抽屉渲染：后续页已改追加，但 `analyzeInBackground` 仍会整体重渲染，可改按行更新。
 - [ ] 批量下载进度合并显示（目前每个文件一行 `step`）。
-- [ ] `dist/` 是旧快照（比 src 少了浮窗/日志/认证改动），发版前要重新生成。
-      桌面存档只放压缩包，命名 `MCL启动器-v<主>.<次>.zip`：v0.1 / v0.2 / v0.3 / v0.4 都是完整包
-      （`mc-launcher\` 启动器源码 + `dsh-plugin\` 插件 + 使用说明/操作文档/启动.bat）。
+- [ ] 桌面存档命名 `MCL启动器-v<主>.<次>.zip`，完整包（`mc-launcher\` 源码 + `dsh-plugin\` + 文档 + 启动.bat）；
+      仓库已无 `dist/`，不再维护旧快照。
 - [ ] 浏览器版 UI 也接上 `/api/logs` 状态面板（现在只有 DSH 浮窗有）。
 
 ### P3
-- [ ] Forge / NeoForge 支持（当前仅 Fabric）。
-- [ ] 发行打包（免装 Node 的单文件/安装器）。
+- [x] Forge / NeoForge 支持（0.4.1 完成：installer processors + classpath 修正）。
+- [ ] 发行打包（可选）：免装 Node 的单文件/安装器。
 - [x] DSH 插件：接上模组库、光影，端口改为动态发现。（0.4.0 全部完成）
 - [ ] 模组库可以再补：图标显示、按下载/更新排序、已装标记（现在只按相关度、不显示已装）
 - [ ] 详情页翻译请求可取消；翻译接口限流处理。

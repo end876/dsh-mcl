@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { ensureDir } from './paths.mjs';
+import { ensureDir, safeJoin } from './paths.mjs';
 
 const EOCD_SIG = 0x06054b50;
 const CEN_SIG = 0x02014b50;
@@ -190,9 +190,13 @@ export function extractZip(file, outDir, filter = () => true) {
     let written = 0;
     for (const entry of zip.entries) {
       if (!filter(entry.name)) continue;
-      const target = path.join(outDir, entry.name);
-      const resolved = path.resolve(target);
-      if (!resolved.startsWith(path.resolve(outDir))) continue; // 防目录穿越
+      // 和打包/其它解包路径共用 safeJoin：绝对路径、盘符、任何 .. 段都直接拒绝
+      let resolved;
+      try {
+        resolved = safeJoin(outDir, entry.name);
+      } catch {
+        continue;
+      }
       if (entry.isDir) {
         ensureDir(resolved);
         continue;
