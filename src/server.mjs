@@ -18,7 +18,7 @@ import { listLoaderVersions, detectLoader as detectLoaderId, loaderLabelFor } fr
 
 // 默认用社区验证过的 client id（Prism Launcher 的），但允许用户换成自己的 Azure 应用
 const MSA_CLIENT_ID = process.env.MCL_CLIENT_ID || 'c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb';
-import { searchProjects, analyzeProjects, installModsBatch, getProjectDetail, installShader, resolveModIds } from './modrinth.mjs';
+import { searchProjects, analyzeProjects, installModsBatch, getProjectDetail, installShader, resolveModIds, assertModProjects } from './modrinth.mjs';
 
 const UI_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui');
 const CLI = path.join(ROOT, 'bin', 'mcl.mjs');
@@ -421,12 +421,27 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
     }
     broadcast({ type: 'job', kind, status: 'running', meta });
 
+    let lastPct = -1;
     const flush = (chunk) => {
       const text = chunk.toString();
       for (const raw of text.split(/\r?\n/)) {
         const line = raw.replace(/\r/g, '').replace(/\x1b\[[0-9;]*m/g, '').trimEnd();
         if (!line) continue;
         broadcast({ type: 'line', kind, line });
+        // 从 CLI 的进度行里抽百分比：整百分点变化才推一次，别每行都广播
+        const match = line.match(/(\d{1,3}(?:\.\d+)?)\s*%/);
+        if (!match) continue;
+        const pct = Math.max(0, Math.min(100, Math.round(Number(match[1]))));
+        if (!Number.isFinite(pct) || pct === lastPct) continue;
+        lastPct = pct;
+        const detail = line
+          .replace(/[█░▓▒]/g, ' ')
+          .replace(/^\s*\d+(?:\.\d+)?%\s*/, '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 120);
+        job.progress = { percent: pct, text: detail };
+        broadcast({ type: 'job', kind, status: 'running', meta, progress: job.progress });
       }
     };
     child.stdout.on('data', flush);
@@ -646,6 +661,12 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         : { loggedIn: false },
       java: cachedJava(),
       runtime,
+      // 当前后台任务（安装/启动）的进度，界面用来画进度条
+      job: (() => {
+        const active = jobs.install || jobs.launch;
+        if (!active) return null;
+        return { kind: active.kind, progress: active.progress ?? null, meta: active.meta ?? null };
+      })(),
       // 命令行启动的游戏没有 job，但 java 进程还活着，也算运行中
       running: Boolean(jobs.launch) || Boolean(runtime?.alive),
       installing: Boolean(jobs.install),
@@ -1084,6 +1105,13 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
           sendJson(res, 400, { error: '缺少项目 ID 或 Minecraft 版本' });
           return;
         }
+        // 整合包/光影不能走模组安装（否则会把 .mrpack 下进 mods/），在这里就给出明确错误
+        try {
+          await assertModProjects([projectId]);
+        } catch (error) {
+          sendJson(res, 400, { error: error.message });
+          return;
+        }
         runJob('install', [
           'mod',
           projectId,
@@ -1133,6 +1161,13 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         const mc = String(body.mcVersion ?? '').trim();
         if (projectIds.length === 0 || !mc) {
           sendJson(res, 400, { error: '缺少模组列表或 Minecraft 版本' });
+          return;
+        }
+        // 同 /api/mod/install：整合包/光影不允许走批量模组安装
+        try {
+          await assertModProjects(projectIds);
+        } catch (error) {
+          sendJson(res, 400, { error: error.message });
           return;
         }
         const args = ['mods', ...projectIds, '--mc', mc];

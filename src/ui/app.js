@@ -81,6 +81,11 @@ const ui = {
   btnCrashfixStart: $('#btn-crashfix-start'),
   crashBannerStart: $('#crash-banner-start'),
   crashBannerLog: $('#crash-banner-log'),
+  jobBanner: $('#job-banner'),
+  jobBannerLabel: $('#job-banner-label'),
+  jobBannerPct: $('#job-banner-pct'),
+  jobBannerFill: $('#job-banner-fill'),
+  jobBannerSub: $('#job-banner-sub'),
   tabs: [...document.querySelectorAll('.tab')],
 };
 
@@ -88,6 +93,7 @@ const store = {
   state: { versions: [], selected: null, running: false, installing: false },
   lines: 0,
   kind: 'mod',
+  job: null,
   remote: [],
   pick: '',
 };
@@ -236,6 +242,30 @@ function updateMemoryUi() {
   ui.memoryConfirm.hidden = value === appliedMemory;
 }
 
+/** 下载/安装/启动任务的进度条（数据来自 SSE job 事件和 /api/state.job） */
+function renderJobBanner() {
+  const banner = ui.jobBanner;
+  if (!banner) return;
+  const job = store.job;
+  const active = Boolean(job && job.status === 'running');
+  banner.hidden = !active;
+  if (!active) return;
+  const meta = job.meta || {};
+  const label =
+    meta.label || (job.kind === 'install' ? `安装 ${meta.version ?? ''}` : `启动 ${meta.version ?? ''}`);
+  ui.jobBannerLabel.textContent = String(label).trim() || '正在处理…';
+  if (ui.jobBannerSub) ui.jobBannerSub.textContent = job.progress?.text || '';
+  const pct =
+    job.progress && Number.isFinite(job.progress.percent)
+      ? Math.max(0, Math.min(100, job.progress.percent))
+      : null;
+  if (ui.jobBannerFill) {
+    ui.jobBannerFill.classList.toggle('indeterminate', pct === null);
+    ui.jobBannerFill.style.width = pct === null ? '38%' : `${pct}%`;
+  }
+  if (ui.jobBannerPct) ui.jobBannerPct.textContent = pct === null ? '' : `${Math.round(pct)}%`;
+}
+
 function renderLaunchState() {
   const { selected, running, installing } = store.state;
   ui.btnLaunch.disabled = !selected || running || installing;
@@ -290,6 +320,17 @@ async function refresh() {
     store.pendingSelect = null;
   }
   store.state = { ...state, selected };
+  if (state.job) {
+    store.job = {
+      kind: state.job.kind,
+      status: 'running',
+      meta: state.job.meta ?? null,
+      progress: state.job.progress ?? null,
+    };
+  } else if (!store.job || store.job.status !== 'running' || (!state.installing && !state.running)) {
+    store.job = null;
+  }
+  renderJobBanner();
   renderVersions();
   renderLaunchState();
   updatePills();
@@ -1305,9 +1346,9 @@ async function loadMore() {
     drawer.offset += fresh.length;
     drawer.hits = drawer.hits.concat(fresh);
     if (drawer.offset === fresh.length) {
-      // 第一页：整体渲染 + 后台分析冲突
+      // 第一页：整体渲染 + 后台分析冲突（只有模组需要冲突/前置分析，整合包/光影跳过）
       renderDrawerRows();
-      if (fresh.length > 0) analyzeInBackground(drawer.mc, fresh.map((hit) => hit.id));
+      if (fresh.length > 0 && drawer.kind === 'mod') analyzeInBackground(drawer.mc, fresh.map((hit) => hit.id));
     } else {
       // 后续页：只追加，避免整列表重建（O(n²)）；有分类筛选时追加前先过一遍
       const visible = drawer.filter
@@ -1527,12 +1568,80 @@ function updateDrawerFoot() {
   const count = drawer.selected.size;
   ui.drawerCount.textContent = count ? `已选 ${count} 个` : '未选择';
   ui.drawerInstall.disabled = count === 0;
+  updateDrawerInstallLabel();
+}
+
+/** 按钮文案跟着页签走：模组是「安装」，整合包是「安装整合包」，光影是「下载光影」 */
+function updateDrawerInstallLabel() {
+  if (!ui.drawerInstall) return;
+  ui.drawerInstall.textContent =
+    drawer.kind === 'pack' ? '安装整合包' : drawer.kind === 'shader' ? '下载光影' : '安装选中';
+}
+
+function drawerTitle(id) {
+  return (drawer.hits ?? []).find((hit) => hit.id === id)?.title ?? id;
+}
+
+/**
+ * 整合包：走 /api/pack/install（会下载 mrpack 并新建独立实例）。
+ * 以前这里和模组共用 /api/mods/install-batch，结果 .mrpack 被当模组下载进 mods/，
+ * 既装不上又白下几十 MB——整合包一次只能装一个，后面的给提示。
+ */
+async function startPackInstall(ids, mc) {
+  const id = ids[0];
+  const title = drawerTitle(id);
+  if (ids.length > 1) toast(`整合包一次只能装一个，已开始安装「${title}」`);
+  try {
+    await api('/api/pack/install', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId: id, mcVersion: mc }),
+    });
+    toast(`开始安装整合包「${title}」，进度看底部日志`);
+    drawerClose();
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+/** 光影：走 /api/shader/install，装到当前实例（没有就退回第一个 Fabric 实例） */
+async function startShaderInstall(ids, mc) {
+  const selected = (store.state.versions ?? []).find((version) => version.id === store.state.selected);
+  const fallback = (store.state.versions ?? []).find((version) => version.id.includes('fabric'));
+  const instance = (selected ?? fallback)?.id;
+  let done = 0;
+  let lastError = null;
+  for (const id of ids) {
+    try {
+      await api('/api/shader/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: id, mcVersion: mc, instance }),
+      });
+      done += 1;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (done > 0) {
+    toast(`已下载 ${done} 个光影${instance ? `到 ${instance}` : ''}`);
+    drawerClose();
+  }
+  if (lastError) toast(lastError.message, true);
 }
 
 async function drawerInstallClick() {
   const ids = [...drawer.selected];
   if (ids.length === 0) return;
   const mc = (ui.drawerMc.value || '1.20.1').trim();
+  if (drawer.kind === 'pack') {
+    await startPackInstall(ids, mc);
+    return;
+  }
+  if (drawer.kind === 'shader') {
+    await startShaderInstall(ids, mc);
+    return;
+  }
   let analysis = drawer.analysis;
   try {
     const res = await api('/api/mods/analyze', {
@@ -1669,7 +1778,12 @@ function bindEvents() {
   for (const tab of ui.drawerTabs) {
     tab.addEventListener('click', () => {
       drawer.kind = tab.dataset.kind;
+      // 换页签后旧的勾选/分析结果作废（模组和整合包的 ID 混在一起会装错）
+      drawer.selected.clear();
+      drawer.analysis = null;
+      drawer.filter = '';
       for (const item of ui.drawerTabs) item.classList.toggle('active', item === tab);
+      updateDrawerInstallLabel();
       doDrawerSearch();
     });
   }
@@ -1811,6 +1925,13 @@ function bindEvents() {
     const data = JSON.parse(event.data);
     if (data.type === 'line') return appendLine(data.line);
     if (data.type === 'job') {
+      store.job = {
+        kind: data.kind,
+        status: data.status,
+        meta: data.meta ?? store.job?.meta ?? null,
+        progress: data.progress ?? (data.status === 'running' ? store.job?.progress ?? null : null),
+      };
+      renderJobBanner();
       if (data.kind === 'install') {
         store.state.installing = data.status === 'running';
         ui.btnInstall.disabled = store.state.installing;

@@ -417,12 +417,18 @@ window.__ModuleLoader__.load({
         const kind = payload.kind;
         if (kind) {
           if (payload.status === 'running') {
-            evStore.jobs[kind] = { status: 'running', meta: payload.meta ?? null };
-            evStore.lines[kind] = [];
+            const prev = evStore.jobs[kind];
+            evStore.jobs[kind] = {
+              status: 'running',
+              meta: payload.meta ?? prev?.meta ?? null,
+              progress: payload.progress ?? prev?.progress ?? null,
+            };
+            // 只有任务真正开始时才清空上一次的日志行（进度更新不能清）
+            if (!prev || prev.status !== 'running') evStore.lines[kind] = [];
             // 新一次启动开始：上一次的崩溃报告作废（服务端同时会推 crash report:null）
-            if (kind === 'launch') evStore.crash = null;
+            if (kind === 'launch' && (!prev || prev.status !== 'running')) evStore.crash = null;
           } else {
-            evStore.jobs[kind] = { status: payload.status, meta: payload.meta ?? null };
+            evStore.jobs[kind] = { status: payload.status, meta: payload.meta ?? null, progress: null };
           }
         }
         flushEvNotify();
@@ -548,9 +554,54 @@ window.__ModuleLoader__.load({
             job.meta?.label ||
             (kind === 'install' ? `安装 ${job.meta?.version ?? ''}` : `启动 ${job.meta?.version ?? ''}`),
           last,
+          progress: job.progress ?? null,
         };
       }
       return null;
+    }
+
+    /** 下载进度条（安装/下载任务有百分比时显示） */
+    function JobBar({ progress }) {
+      if (!progress || !Number.isFinite(progress.percent)) return null;
+      const pct = Math.max(0, Math.min(100, progress.percent));
+      return h(
+        'div',
+        { style: { width: '100%', marginTop: 6 } },
+        h(
+          'div',
+          {
+            style: {
+              height: 5,
+              borderRadius: 999,
+              overflow: 'hidden',
+              background: 'var(--dsw-alias-bg-layer-2)',
+            },
+          },
+          h('div', {
+            style: {
+              width: `${pct}%`,
+              height: '100%',
+              borderRadius: 999,
+              background: 'var(--dsw-alias-brand-primary)',
+              transition: 'width .25s ease',
+            },
+          }),
+        ),
+        h(
+          'div',
+          {
+            style: {
+              display: 'flex',
+              justifyContent: 'space-between',
+              marginTop: 3,
+              fontSize: 10,
+              color: 'var(--dsw-alias-label-secondary)',
+            },
+          },
+          h('span', null, '下载进度'),
+          h('span', null, `${Math.round(pct)}%`),
+        ),
+      );
     }
 
     // 进度小圆点的呼吸动画（只注入一次）
@@ -1974,6 +2025,7 @@ window.__ModuleLoader__.load({
                     display: 'flex',
                     alignItems: 'center',
                     gap: 8,
+                    flexWrap: 'wrap',
                     marginTop: 10,
                     fontSize: 12,
                     color: 'var(--dsw-alias-label-secondary)',
@@ -1995,6 +2047,7 @@ window.__ModuleLoader__.load({
                   { style: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
                   job.last || '…',
                 ),
+                h(JobBar, { progress: job.progress }),
               )
             : null,
         ),
@@ -3287,6 +3340,7 @@ window.__ModuleLoader__.load({
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
+                    flexWrap: 'wrap',
                     padding: '5px 8px',
                     borderRadius: 8,
                     border: '1px solid var(--dsw-alias-border-l1)',
@@ -3312,6 +3366,7 @@ window.__ModuleLoader__.load({
                   { style: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
                   job.last || '…',
                 ),
+                h(JobBar, { progress: job.progress }),
               )
             : null,
           crashCard,

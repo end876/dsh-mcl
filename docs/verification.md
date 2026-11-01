@@ -41,6 +41,15 @@
 | 5 | `/api/mod/inspect-path` 指向不存在文件 | ✅ 400，不回显同目录文件名 |
 | 6 | 上述折腾后 `/api/state` | ✅ 200，服务存活 |
 
+## 1.1.1 进度条与路由修复（2026-11-01）
+
+| # | 项目 | 做法 | 结果 |
+| --- | --- | --- | --- |
+| 1 | 真实任务进度 | 沙箱 `importpack`（40MB overrides）→ 轮询 `/api/state.job` | ✅ 进度从 0% 递增到 33%+，含 `206.8 MB / 621.7 MB` 阶段信息 |
+| 2 | 浏览器进度条 | CDP 注入 `store.job` → `renderJobBanner()` | ✅ 顶部横幅显示标签 / 阶段 / 63% / 63% 宽度 |
+| 3 | 插件进度条 | harness 渲染 + job progress 事件 | ✅ 设置页与浮窗 job 行都出现进度条（63%） |
+| 4 | 整合包路由 | 合并 1.1.1 补丁 | ✅ 抽屉按页签分派（pack→`/api/pack/install`、shader→`/api/shader/install`、mod→batch） |
+
 ## 1.1.0 移植验证（2026-10-31）
 
 把朋友基于 1.0.0 的 v1.1.0（崩溃修复助手）三路合并进我们的 1.0.2，逐项回归我们的修复仍然在。
@@ -90,3 +99,13 @@
 
 **已知未覆盖**：没有用真实整合包/真实 mod 冲突制造一次崩溃（用假实例 + 真实 Java 失败路径代替）；
 DSH 插件 UI 需要重启 DSH 后才能在真实浮窗里人工确认。
+
+## 1.1.1 整合包装错入口修复（2026-11-01）
+
+| # | 项目 | 做法 | 结果 |
+| --- | --- | --- | --- |
+| 1 | 复现 | `mcl mods fabulously-optimized --mc 1.20.1 --instance fake-inst` | ✅ 复现：`Fabulously.Optimized-5.4.1.mrpack` 被写进 `fake-inst/mods/`（与用户机上的残留文件一致） |
+| 2 | 服务端守卫单测 | `node test-fixtures/test-pack-guard.mjs` | ✅ 7/7：`assertModProjects` 拦整合包、普通 mod 放行；`installModsBatch` / `installMod` 抛错且 mods/ 零写入、不多建实例 |
+| 3 | 浏览器路由 + API 守卫 | `node test-fixtures/test-pack-route.mjs`（stub fetch + 临时服务 + 无头 Edge） | ✅ 6/6：整合包页签 → `/api/pack/install`、模组页签 → `/api/mods/install-batch`；`POST /api/mods/install-batch` 传整合包返回 400 + 「整合包」提示 |
+| 4 | 正确路径实跑 | 隔离 GAME_DIR（stub 1.20.1 + 复用真实 libraries/assets）跑 `mcl pack fabulously-optimized` | ✅ mrpack 下载 → 解析 index → 建 Fabric 实例 → 下载内容（见运行日志） |
+| 5 | 已安装副本 | 同步 1.1.1、重启 daemon、清理误装进 mods/ 的 mrpack 残留 | ✅ 残留移到 `mods-stray-packs-<时间>/`，mods/ 恢复干净 |

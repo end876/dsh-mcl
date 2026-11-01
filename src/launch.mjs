@@ -24,7 +24,7 @@ import { ensureJava } from './java.mjs';
 import { c, info, ok, step, warn } from './log.mjs';
 
 export const LAUNCHER_NAME = 'mc-launcher';
-export const LAUNCHER_VERSION = '1.1.0';
+export const LAUNCHER_VERSION = '1.1.1';
 
 /** 实例目录里的运行时快照文件名（DSH 浮窗 / `mcl status` 读它） */
 export const RUNTIME_NAME = '.mcl-runtime.json';

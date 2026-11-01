@@ -44,6 +44,16 @@
 
       <div class="work">
         <main class="main">
+          <section class="job-banner" id="job-banner" aria-live="polite" hidden>
+            <div class="job-banner-row">
+              <span class="job-pulse"></span>
+              <span class="job-banner-label" id="job-banner-label">正在下载…</span>
+              <span class="job-banner-sub" id="job-banner-sub"></span>
+              <b class="job-banner-pct" id="job-banner-pct"></b>
+            </div>
+            <div class="job-banner-bar"><i id="job-banner-fill"></i></div>
+          </section>
+
           <!-- 启动 -->
           <section class="page active" data-page="start">
             <!-- 最近崩溃提示条：有崩溃记录时由 app.js 填充 -->

@@ -9,6 +9,39 @@ import { Progress, ok, step, warn } from './log.mjs';
 
 const API = 'https://api.modrinth.com/v2';
 
+// 项目类型的中文名：用于把「整合包走模组安装」这种误用挡在前面
+const PROJECT_TYPE_ZH = { modpack: '整合包', shader: '光影', resourcepack: '资源包', mod: '模组' };
+
+/**
+ * 校验这些项目确实是「模组」。
+ * 整合包的文件是 .mrpack、光影是压缩包，被当成模组下载只会塞进 mods/ 目录：
+ * 既装不上，还会下几十 MB 白流量，所以入口处直接拦掉并给正确用法。
+ * 网络失败时放行（后续 pickVersion 失败会照常报错）。
+ */
+export async function assertModProjects(projectIds) {
+  const ids = [...new Set((projectIds ?? []).filter(Boolean).map(String))];
+  if (ids.length === 0) return;
+  let projects;
+  try {
+    projects = await fetchProjects(ids);
+  } catch {
+    return;
+  }
+  const bad = projects.filter((project) => project.project_type && project.project_type !== 'mod');
+  if (bad.length === 0) return;
+  const names = bad
+    .map((project) => `「${project.title ?? project.id}」是${PROJECT_TYPE_ZH[project.project_type] ?? project.project_type}`)
+    .join('、');
+  throw new Error(
+    `${names}，不能用模组方式安装：整合包请用「整合包」页签（或 mcl pack <ID>），光影请用「光影」页签`,
+  );
+}
+
+/** 版本文件是不是整合包（.mrpack）——不用再调一次 API 的兜底判断 */
+function looksLikeModpackFile(file) {
+  return Boolean(file && /\.mrpack$/i.test(String(file.filename ?? '')));
+}
+
 function buildFacets({ type, loader, mcVersion }) {
   const facets = [];
   if (type) facets.push([`project_type:${type}`]);
@@ -156,10 +189,15 @@ export async function installMod(projectId, { mcVersion, loader = 'fabric', inst
   const version = await pickVersion(projectId, { loader: loaderKind, mcVersion });
   if (!version) throw new Error('这个模组没有适配当前版本的文件');
 
-  const target = await resolveTargetInstance({ instance, loaderKind, mcVersion, sourceName });
-
   const file = version.files.find((item) => item.primary) ?? version.files[0];
   if (!file) throw new Error('这个版本没有可下载文件');
+  if (looksLikeModpackFile(file)) {
+    throw new Error(
+      `「${version.name ?? projectId}」是整合包（mrpack），不能用模组方式安装：请用「整合包」页签，或 mcl pack ${projectId}`,
+    );
+  }
+
+  const target = await resolveTargetInstance({ instance, loaderKind, mcVersion, sourceName });
 
   const dest = path.join(instanceModsDir(target), file.filename);
   step(`下载 ${file.filename}`);
@@ -198,11 +236,10 @@ export async function installModsBatch(projectIds, { mcVersion, loader = 'fabric
     throw new Error(`不支持的加载器：${loader}（可用 fabric / forge / neoforge / quilt）`);
   }
 
-  const instanceId = await resolveTargetInstance({ instance, loaderKind, mcVersion, sourceName });
-
   const wanted = [...new Set(projectIds)];
   const resolved = new Map();
   const missing = new Set();
+  const packHits = [];
   // 前置可能还带前置：一层层往外展开（最多 4 层，防环）
   let queue = wanted;
   for (let depth = 0; depth < 4 && queue.length > 0; depth += 1) {
@@ -215,6 +252,12 @@ export async function installModsBatch(projectIds, { mcVersion, loader = 'fabric
         warn(`跳过 ${id}：没有适配版本`);
         continue;
       }
+      // 整合包混进模组安装是最常见的误用：先拦，别把 .mrpack 下进 mods/ 再建实例
+      const primary = version.files?.find((item) => item.primary) ?? version.files?.[0];
+      if (looksLikeModpackFile(primary)) {
+        packHits.push(`「${version.name ?? id}」(${id})`);
+        continue;
+      }
       resolved.set(id, version);
       for (const dep of version.dependencies ?? []) {
         if (dep.dependency_type !== 'required' || !dep.project_id) continue;
@@ -223,6 +266,14 @@ export async function installModsBatch(projectIds, { mcVersion, loader = 'fabric
     }
     queue = [...new Set(next)];
   }
+
+  if (packHits.length > 0) {
+    throw new Error(
+      `${packHits.join('、')} 是整合包（mrpack），不能用模组方式安装：请用「整合包」页签，或 mcl pack <项目ID>`,
+    );
+  }
+
+  const instanceId = await resolveTargetInstance({ instance, loaderKind, mcVersion, sourceName });
 
   const modsDir = instanceModsDir(instanceId);
   const installed = [];
