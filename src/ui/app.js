@@ -1056,28 +1056,30 @@ function setKind(kind) {
 
 async function inspectFile(file) {
   if (!file) return;
-  // 大文件走原始字节流上传（不经过 base64，几百 MB 的整合包也能识别）
-  if (file.size > 8 * 1024 * 1024) {
-    ui.dropText.textContent = `正在读取 ${file.name}（${(file.size / 1024 / 1024).toFixed(0)}MB）…`;
-    try {
-      const res = await fetch('/api/mod/inspect-file', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'X-File-Name': encodeURIComponent(file.name),
-        },
-        body: file,
-      });
-      const info = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(info.error || `HTTP ${res.status}`);
-      lastInspectPath = '';
-      renderInspect(info, file);
-    } catch (error) {
-      ui.dropText.textContent = '识别失败，试试用下面的路径识别';
-      toast(`识别失败：${error.message}`, true);
-    }
-    return;
+  // 拖入/选择的文件统一走流式上传：服务端暂存并返回 uploadId，后面能直接装
+  ui.dropText.textContent =
+    file.size > 8 * 1024 * 1024
+      ? `正在读取 ${file.name}（${(file.size / 1024 / 1024).toFixed(0)}MB）…`
+      : `正在识别 ${file.name}…`;
+  try {
+    const res = await fetch('/api/mod/inspect-file', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'X-File-Name': encodeURIComponent(file.name),
+      },
+      body: file,
+    });
+    const info = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(info.error || `HTTP ${res.status}`);
+    lastInspectPath = '';
+    lastUpload = info.uploadId ? { id: info.uploadId, name: file.name } : null;
+    renderInspect(info, file);
+  } catch (error) {
+    ui.dropText.textContent = '识别失败，试试用下面的路径识别';
+    toast(`识别失败：${error.message}`, true);
   }
+  return;
   ui.dropText.textContent = `正在识别 ${file.name}…`;
   try {
     const dataUrl = await new Promise((resolve, reject) => {
@@ -1101,17 +1103,24 @@ async function inspectFile(file) {
 }
 
 let lastInspectPath = '';
+// 拖入/选择的文件会先传到服务端暂存，装整合包时用这个 id（浏览器拿不到本地路径）
+let lastUpload = null;
 
 async function importPack() {
-  if (!lastInspectPath) {
-    toast('请先用路径识别这个整合包', true);
+  const source = lastInspectPath
+    ? { path: lastInspectPath }
+    : lastUpload?.id
+      ? { uploadId: lastUpload.id }
+      : null;
+  if (!source) {
+    toast('请重新拖入文件，或用「浏览…」选一次', true);
     return;
   }
   try {
     await api('/api/mod/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: lastInspectPath }),
+      body: JSON.stringify(source),
     });
     toast('开始导入，日志里能看到解压进度');
   } catch (error) {
@@ -1185,6 +1194,7 @@ async function inspectPath() {
       body: JSON.stringify({ path: target }),
     });
     lastInspectPath = target;
+    lastUpload = null;
     renderInspect(info, { name: target.split(/[\\/]/).pop(), size: 0 });
   } catch (error) {
     ui.dropText.textContent = '识别失败';
@@ -1228,8 +1238,13 @@ function renderInspect(info, file) {
     btn.style.marginTop = '10px';
     btn.textContent = `安装为实例「${instanceName}」`;
     btn.addEventListener('click', async () => {
-      if (!lastInspectPath) {
-        toast('请先用「浏览…」选一次文件，浏览器拿不到完整路径', true);
+      const source = lastInspectPath
+        ? { path: lastInspectPath }
+        : lastUpload?.id
+          ? { uploadId: lastUpload.id }
+          : null;
+      if (!source) {
+        toast('请重新拖入文件，或用「浏览…」选一次', true);
         return;
       }
       btn.disabled = true;
@@ -1238,7 +1253,7 @@ function renderInspect(info, file) {
         await api('/api/pack/import-local', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: lastInspectPath, name: instanceName }),
+          body: JSON.stringify({ ...source, name: instanceName }),
         });
         store.pendingSelect = instanceName;
         toast(`开始安装「${instanceName}」，进度看下方日志`);

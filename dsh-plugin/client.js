@@ -106,6 +106,7 @@ window.__ModuleLoader__.load({
           headers: {
             'Content-Type': 'application/octet-stream',
             'X-File-Name': encodeURIComponent(file.name),
+            'X-Discard-Upload': '1',
           },
           body: file,
           signal: controller.signal,

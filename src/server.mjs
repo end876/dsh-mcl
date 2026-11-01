@@ -25,6 +25,38 @@ const CLI = path.join(ROOT, 'bin', 'mcl.mjs');
 
 // ── 外观：主题 + 背景图（存 ~/.mcl/ui/，浏览器版和 DSH 插件共用）──
 const UI_HOME = path.join(os.homedir(), '.mcl', 'ui');
+// 拖进来的大文件先落到这里，识别后保留 12 小时，装完/过期再删
+const UPLOAD_DIR = path.join(os.homedir(), '.mcl', 'uploads');
+const UPLOAD_TTL = 12 * 60 * 60 * 1000;
+function ensureUploadDir() {
+  try {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  } catch {
+    /* ignore */
+  }
+}
+function sweepUploads() {
+  try {
+    const now = Date.now();
+    for (const name of fs.readdirSync(UPLOAD_DIR)) {
+      const file = path.join(UPLOAD_DIR, name);
+      try {
+        if (now - fs.statSync(file).mtimeMs > UPLOAD_TTL) fs.unlinkSync(file);
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+function resolveUpload(id) {
+  const name = String(id ?? '').trim();
+  if (!/^[A-Za-z0-9._-]{4,120}$/.test(name)) return null;
+  const file = path.join(UPLOAD_DIR, name);
+  if (!isInside(UPLOAD_DIR, file) || !fs.existsSync(file)) return null;
+  return file;
+}
 const APPEARANCE_FILE = path.join(UI_HOME, 'appearance.json');
 const APPEARANCE_DEFAULTS = {
   theme: 'minimal',
@@ -451,6 +483,10 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
       if (jobs[kind] !== job) return;
       job.status = status;
       jobs[kind] = null;
+      // 从上传暂存文件装的任务：结束后把临时文件删掉
+      if (job.meta?.stagedFile) {
+        fs.promises.unlink(job.meta.stagedFile).catch(() => {});
+      }
       invalidateVersions(); // 装完/启动完版本列表可能变了，别让缓存拖着
       broadcast({ type: 'job', kind, status, meta });
       broadcast({ type: 'refresh' });
@@ -1015,10 +1051,11 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
           name = 'upload.zip';
         }
         name = path.basename(name).slice(0, 160) || 'upload.zip';
-        const tmp = path.join(
-          os.tmpdir(),
-          `mcl-inspect-${Date.now()}-${Math.random().toString(16).slice(2)}.bin`,
-        );
+        ensureUploadDir();
+        sweepUploads();
+        const uploadId = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}.bin`;
+        const tmp = path.join(UPLOAD_DIR, uploadId);
+        const discard = String(req.headers['x-discard-upload'] ?? '') === '1';
         const MAX = 4 * 1024 * 1024 * 1024;
         let size = 0;
         try {
@@ -1054,11 +1091,11 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
           });
           const buffer = fs.readFileSync(tmp);
           const result = inspectArchive(buffer, name);
-          sendJson(res, 200, result);
+          sendJson(res, 200, { ...result, uploadId: discard ? null : uploadId, uploadName: name });
         } catch (error) {
           sendJson(res, 400, { error: error.message });
         } finally {
-          fs.promises.unlink(tmp).catch(() => {});
+          if (discard) fs.promises.unlink(tmp).catch(() => {});
         }
         return;
       }
@@ -1240,19 +1277,39 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
 
       if (route === '/api/mod/import' && req.method === 'POST') {
         const body = await readBody(req);
-        const target = String(body.path ?? '').trim();
+        let target = String(body.path ?? '').trim();
+        let stagedFile = '';
+        if (!target && body.uploadId) {
+          const file = resolveUpload(body.uploadId);
+          if (!file) {
+            sendJson(res, 400, { error: '上传的文件已过期，请重新拖入或选择' });
+            return;
+          }
+          target = file;
+          stagedFile = file;
+        }
         if (!target) {
           sendJson(res, 400, { error: '缺少文件路径' });
           return;
         }
-        runJob('install', ['import', target], { version: '导入整合包' });
+        runJob('install', ['import', target], { version: '导入整合包', stagedFile });
         sendJson(res, 200, { ok: true });
         return;
       }
 
       if (route === '/api/pack/import-local' && req.method === 'POST') {
         const body = await readBody(req);
-        const target = String(body.path ?? '').trim();
+        let target = String(body.path ?? '').trim();
+        let stagedFile = '';
+        if (!target && body.uploadId) {
+          const file = resolveUpload(body.uploadId);
+          if (!file) {
+            sendJson(res, 400, { error: '上传的文件已过期，请重新拖入或选择' });
+            return;
+          }
+          target = file;
+          stagedFile = file;
+        }
         if (!target) {
           sendJson(res, 400, { error: '缺少整合包路径' });
           return;
@@ -1260,6 +1317,7 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         const name = String(body.name ?? '').trim();
         runJob('install', ['importpack', target, ...(name ? ['--name', name] : [])], {
           version: name || path.basename(target),
+          stagedFile,
         });
         sendJson(res, 200, { ok: true, name });
         return;
