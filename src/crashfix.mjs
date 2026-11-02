@@ -4,7 +4,7 @@ import path from 'node:path';
 import { findVersionDir, readLocalVersionJson } from './install.mjs';
 import { listJava } from './java.mjs';
 import { scanInstance } from './dupes.mjs';
-import { inspectArchive } from './mods.mjs';
+import { inspectArchiveFile } from './mods.mjs';
 import { detectLoader, loaderLabelFor } from './loader.mjs';
 import { ensureDir, isInside } from './paths.mjs';
 
@@ -304,7 +304,6 @@ function listMods(dir) {
     return { modsDir, mods: [] };
   }
   const mods = [];
-  let metaBudget = 80 * 1024 * 1024;
   for (const file of names) {
     const full = path.join(modsDir, file);
     const stat = statOf(full);
@@ -318,14 +317,13 @@ function listMods(dir) {
       name: null,
       version: null,
     };
-    if (!entry.disabled && stat.size <= 24 * 1024 * 1024 && metaBudget >= stat.size) {
+    if (!entry.disabled) {
       try {
-        const buf = fs.readFileSync(full);
-        const meta = inspectArchive(buf, file);
+        // 文件版：只读 jar 尾部 + 中央目录，不把整包读进内存
+        const meta = inspectArchiveFile(full, file);
         entry.id = meta.id || null;
         entry.name = meta.name || null;
         entry.version = meta.version ? String(meta.version) : null;
-        metaBudget -= stat.size;
       } catch {
         /* 读不出元数据没关系，文件信息足够给建议 */
       }
@@ -1091,13 +1089,16 @@ export function buildFixReport(instance, options = {}) {
         cause = null;
       }
       if (!cause) continue;
+      const evidence = cause.evidence ?? [];
+      const base = Number(cause.confidence ?? rule.confidence ?? 0.5);
+      const boost = evidence.length > 1 ? Math.min(0.12, (evidence.length - 1) * 0.02) : 0;
       causes.push({
         id: rule.id,
         title: rule.title,
         severity: rule.severity,
-        confidence: cause.confidence ?? rule.confidence,
+        confidence: Math.min(0.99, Math.round((base + boost) * 100) / 100),
         explanation: cause.explanation,
-        evidence: cause.evidence ?? [],
+        evidence,
         fixes: (cause.fixes ?? []).filter(Boolean),
       });
     }

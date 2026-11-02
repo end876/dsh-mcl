@@ -24,6 +24,15 @@
 
 ## 已知未覆盖
 
+### 回归用例：PID 复用给另一个 java（手工，已知限制）
+
+1. 启动一个长驻 Java 进程（例如 `runtime/jre-17/.../java.exe -jar <任意长驻 jar>`），记下 PID。
+2. 在某实例目录写 `.mcl-runtime.json`：`{ "pid": <该 PID>, "stopped": false, "memory": "2G", "username": "Player" }`。
+3. `GET /api/state`。
+
+**当前预期（已知限制）**：`runtime.alive = true`、界面显示运行中——因为只校验映像名含 `java`。
+创建时间比对（启动时记 `startedAt`，与进程创建时间 ±10s 比对）落地后，本用例应改为预期 `running = false`。
+
 - **PID 复用给另一个 java 进程**（极低概率）：`probeProcess` 目前只校验映像名包含 `java`；
   更严格的「启动时记录 `startedAt`，比对进程创建时间 ±10s」还没实现，真踩到再上。
 
@@ -44,6 +53,14 @@
 | 4 | 畸形 URL 编码（`%E0%A4%A`） | ✅ 404，进程不崩 |
 | 5 | `/api/mod/inspect-path` 指向不存在文件 | ✅ 400，不回显同目录文件名 |
 | 6 | 上述折腾后 `/api/state` | ✅ 200，服务存活 |
+
+## 1.1.3 崩溃分析打磨（2026-11-02）
+
+| # | 项目 | 结果 |
+| --- | --- | --- |
+| 1 | listMods 文件版读取 | ✅ 30 个 jar 的崩溃报告生成 401ms，不读整包、无 80MB/24MB 预算降级 |
+| 2 | confidence 动态上调 | ✅ OOM 2 条证据：0.95 → 0.97（上限 0.99） |
+| 3 | 备份目录保留 | ✅ 7 个 `mods-backup-*` → 5 个（1.1.2 已测） |
 
 ## 1.1.2 安全收口（2026-11-02）
 
