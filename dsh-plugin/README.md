@@ -241,7 +241,44 @@ POST /api/client/mount?...   // 浮窗挂载信标，写入 tmp/client-mounts.lo
 
 ---
 
-## 七、更新日志
+## 七、开发结构与性能
+
+> DSH 客户端插件走 `window.__ModuleLoader__.load({ factory(require) })`，**不支持相对 import**，
+> 所以 `client.js` 是单文件（约 3.6k 行）。文件头有 10 段结构索引，改代码前先看它。
+
+| 段 | 内容 |
+| --- | --- |
+| 01 | 依赖 / 常量 / 偏好 |
+| 02 | 端口发现与 HTTP API（`api` / `apiUpload` / `post` / `get`） |
+| 03 | hooks（`useEmbedded` / `useLauncher` / `useEvents` / `useLauncherTheme`） |
+| 04 | 主题常量与 SSE 事件流（`evStore` / `handleEvent` / `connectEvents`） |
+| 05 | 通用小部件（`JobBar` / `VersionSelect` / `LogBox` / `Crash*`） |
+| 06 | 样式表 `S` / `themeVars` |
+| 07 | 模组库 `ModLibrary` |
+| 08 | 设置页 `SettingsSection` |
+| 09 | 浮窗 `LauncherPanel` / `PanelBody` |
+| 10 | 注册两个 slot |
+
+### 性能约定
+
+- **事件订阅带 selector**：`useEvents((snap) => ({ crash: snap.crash, jobs: snap.jobs }))`。
+  设置页不订阅日志行，SSE 日志不会把整页刷一遍；浮窗只订阅 jobs/crash/auth，日志用本地轮询。
+  新增订阅时只取需要的字段，selector 结果用浅比较判等。
+- **进度通知 150ms 合并**：`job` 进度事件不会每 1% 整窗重渲染；日志行用 rAF 合并。
+- **主题 30s 缓存**：`useLauncherTheme` 复用上次 `/api/ui/appearance` 结果，浮窗/设置页来回切不重复请求。
+- **崩溃修复列表 memo**：`dedupeFixes` 只在报告变化时重算。
+- **日志上限**：`evStore.lines` 每个 kind 最多 80 行；本地日志轮询内容不变时不 setState。
+- **实测**（200 条 SSE 日志行，React 渲染计数）：设置页 **62 → 0** 次，浮窗 **65 → 3** 次。
+
+### 改代码约定
+
+- 新接口调用统一走 `api()/post()/get()/apiUpload()`，不要在组件里裸 `fetch`；
+- 新样式加到 `S` / `themeVars`，别在 JSX 里堆重复对象；
+- 组件只读 props + hooks；跨组件复用的纯函数放 05 段之前；
+- 改完至少跑：`node --check dsh-plugin/client.js`、`node tmp/plugin-smoke.mjs`、
+  `tmp/harness/index.html` 截图（含崩溃卡片 / 进度条 / 设置页）。
+
+## 八、更新日志
 
 ### v1.1.0（2026-10-31）
 

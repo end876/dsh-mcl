@@ -1,9 +1,30 @@
 window.__ModuleLoader__.load({
   id: '@local/dsh-mc-launcher',
   factory(require) {
+    /*
+     * 结构索引（自上而下，改代码前先看这里）：
+     *  01 依赖 / 常量 / 偏好
+     *  02 端口发现与 HTTP API（api / apiUpload / post / get）
+     *  03 hooks（useEmbedded / subscribeLauncher / useLauncher / useEvents / useLauncherTheme）
+     *  04 主题常量与事件流 SSE（evStore / handleEvent / connectEvents）
+     *  05 通用小部件（JobBar / VersionSelect / WindowToggles / MemoryMeter / LogBox / Crash*）
+     *  06 样式（S / themeVars）
+     *  07 模组库（ModLibrary）
+     *  08 设置页（SettingsSection）
+     *  09 浮窗（LauncherPanel / PanelBody）
+     *  10 注册（slots.settings.section / shell.overlay）
+     *
+     * 约定：
+     *  - 组件只读 props + hooks；跨组件复用的纯函数放 05 之前；
+     *  - 新接口调用统一走 api()/post()/get()，别在组件里裸 fetch；
+     *  - 新样式统一加到 S / themeVars，不在 JSX 里堆重复对象；
+     *  - 事件订阅用 useEvents(selector)，只取自己需要的字段，避免日志行把整棵子树刷一遍。
+     */
     const React = require('react');
     const h = React.createElement;
-    const { useState, useEffect, useCallback, useRef } = React;
+    const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+    /* ── 01 · 依赖 / 常量 / 偏好 ──────────────────────────── */
 
     const DEFAULT_PORT = 51730;
     const PORT_SCAN = 20; // 和启动器的端口兜底范围一致：51730 ~ 51749
@@ -21,6 +42,8 @@ window.__ModuleLoader__.load({
     }
 
     /** 这个端口上跑的是不是我们的启动器 */
+    /* ── 02 · 端口发现与 HTTP API ─────────────────────────── */
+
     async function probePort(port, timeoutMs = 1500) {
       const controller = new AbortController();
       const timer = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -176,6 +199,8 @@ window.__ModuleLoader__.load({
       writePref(EMBED_KEY, value ? '1' : '0');
       window.dispatchEvent(new Event('mcl-embedded-change'));
     }
+
+    /* ── 03 · hooks ───────────────────────────────────────── */
 
     function useEmbedded() {
       const [value, setLocal] = useState(getEmbedded);
@@ -337,13 +362,23 @@ window.__ModuleLoader__.load({
     }
 
     /** 读一次外观设置（主题改得很少，挂载时读一次就够；浮窗隐藏会卸载，再显示会重读） */
+    let themeCache = { at: 0, theme: null };
+
     function useLauncherTheme() {
-      const [theme, setTheme] = useState('minimal');
+      const [theme, setTheme] = useState(themeCache.theme || 'minimal');
       useEffect(() => {
         let alive = true;
+        // 30 秒内复用上一次结果：浮窗展开/设置页切换不用反复请求
+        if (themeCache.theme && Date.now() - themeCache.at < 30_000) {
+          setTheme(themeCache.theme);
+          return undefined;
+        }
         api('/api/ui/appearance')
           .then((data) => {
-            if (alive && data && THEME_TOKENS[data.theme]) setTheme(data.theme);
+            if (alive && data && THEME_TOKENS[data.theme]) {
+              themeCache = { at: Date.now(), theme: data.theme };
+              setTheme(data.theme);
+            }
           })
           .catch(() => {
             /* 服务没起来就用默认主题 */
@@ -356,6 +391,8 @@ window.__ModuleLoader__.load({
     }
 
     /* ---------- 事件流：安装/启动进度、登录结果都从 /api/events 拿 ---------- */
+
+    /* ── 04 · 主题与事件流（SSE） ─────────────────────────── */
 
     const evStore = {
       subscribers: new Set(),
@@ -549,27 +586,65 @@ window.__ModuleLoader__.load({
       };
     }
 
-    function useEvents() {
-      const [snapshot, setSnapshot] = useState(evSnapshot);
-      useEffect(() => subscribeEvents(setSnapshot), []);
-      return snapshot;
+    /** 浅比较：selector 返回新对象时，字段没变就不触发重渲染 */
+    function shallowEqual(a, b) {
+      if (a === b) return true;
+      if (Array.isArray(a) && Array.isArray(b)) {
+        if (a.length !== b.length) return false;
+        for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false;
+        return true;
+      }
+      if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+      const keys = Object.keys(a);
+      if (keys.length !== Object.keys(b).length) return false;
+      for (const key of keys) if (a[key] !== b[key]) return false;
+      return true;
+    }
+
+    /**
+     * 订阅事件流。传入 selector 只取关心的字段：
+     * 日志行不会让只关心 jobs/crash 的组件跟着重渲染。
+     */
+    function useEvents(select) {
+      const selectRef = useRef(select);
+      selectRef.current = select || ((snapshot) => snapshot);
+      const [value, setValue] = useState(() => selectRef.current(evSnapshot()));
+      const lastRef = useRef(value);
+      useEffect(() => {
+        const onChange = (next) => {
+          const nextValue = selectRef.current(next);
+          if (shallowEqual(lastRef.current, nextValue)) return;
+          lastRef.current = nextValue;
+          setValue(nextValue);
+        };
+        return subscribeEvents(onChange);
+      }, []);
+      return value;
+    }
+
+    /** 取最后一条非空日志（截断到 90 字符） */
+    function lastLineOf(list) {
+      for (let i = list.length - 1; i >= 0; i -= 1) {
+        const line = String(list[i] ?? '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (line) return line.length > 90 ? `${line.slice(0, 90)}…` : line;
+      }
+      return '';
     }
 
     /** 正在跑的任务（安装 / 启动），给界面显示进度用 */
-    function runningJob(events) {
+    function runningJob(events, extraLast = '') {
       const order = ['install', 'launch'];
       for (const kind of order) {
         const job = events?.jobs?.[kind];
         if (!job || job.status !== 'running') continue;
-        const list = events?.lines?.[kind] ?? [];
-        let last = '';
-        for (let i = list.length - 1; i >= 0; i -= 1) {
-          const line = String(list[i] ?? '').replace(/\s+/g, ' ').trim();
-          if (line) {
-            last = line.length > 90 ? `${line.slice(0, 90)}…` : line;
-            break;
-          }
-        }
+        // 组件不再订阅日志行：优先用外部传进来的最后一行/进度文案，最后才回退事件行
+        const last =
+          String(extraLast || '').trim() ||
+          lastLineOf(events?.lines?.[kind] ?? []) ||
+          job.progress?.text ||
+          '';
         return {
           kind,
           label:
@@ -583,6 +658,8 @@ window.__ModuleLoader__.load({
     }
 
     /** 下载进度条（安装/下载任务有百分比时显示） */
+    /* ── 05 · 通用小部件 ──────────────────────────────────── */
+
     function JobBar({ progress }) {
       if (!progress || !Number.isFinite(progress.percent)) return null;
       const pct = Math.max(0, Math.min(100, progress.percent));
@@ -828,7 +905,10 @@ window.__ModuleLoader__.load({
      */
     function CrashReportBody({ report, busy, onFix, maxCauses = 3, maxEvidence = 2, compact = true }) {
       const causes = (Array.isArray(report?.causes) ? report.causes : []).slice(0, maxCauses);
-      const topFixes = causes.length === 0 ? dedupeFixes(report?.fixes) : [];
+      const topFixes = useMemo(
+        () => (causes.length === 0 ? dedupeFixes(report?.fixes) : []),
+        [report, causes.length],
+      );
       const mono = 'ui-monospace, SFMono-Regular, Consolas, monospace';
       const severityOf = (cause) => {
         const level = String(cause?.severity ?? '').toLowerCase();
@@ -952,6 +1032,8 @@ window.__ModuleLoader__.load({
         return false;
       }
     }
+
+    /* ── 06 · 样式表 ─────────────────────────────────────── */
 
     const S = {
       page: { display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 24 },
@@ -1120,6 +1202,8 @@ window.__ModuleLoader__.load({
      * 模组库：搜 Modrinth → 勾选 → 冲突/依赖预检 → 批量安装（装成后台任务，进度走 SSE）
      * 目标实例不在这里选：模组会装到 fabric-<mc>-mods，整合包会自己建实例，光影装到当前实例。
      */
+    /* ── 07 · 模组库 ─────────────────────────────────────── */
+
     function ModLibrary({ instanceId, mc, loader, busy: busyOuter, onNotice }) {
       const [tab, setTab] = useState('mod');
       const [query, setQuery] = useState('');
@@ -1521,10 +1605,13 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /* ── 08 · 设置页 ─────────────────────────────────────── */
+
     function SettingsSection() {
       const embedded = useEmbedded();
       const { state, error, reload } = useLauncher();
-      const events = useEvents();
+      // 设置页只关心崩溃报告和任务状态，日志行不参与渲染
+      const events = useEvents((snap) => ({ crash: snap.crash, jobs: snap.jobs }));
       const job = runningJob(events);
       const theme = useLauncherTheme();
       const [version, setVersion] = useState('');
@@ -2426,12 +2513,13 @@ window.__ModuleLoader__.load({
       return h(PanelBody, null);
     }
 
+    /* ── 09 · 浮窗 ───────────────────────────────────────── */
+
     function PanelBody() {
       const embedded = useEmbedded();
       const theme = useLauncherTheme();
       const { state, error, reload } = useLauncher();
-      const events = useEvents();
-      const job = runningJob(events);
+      const events = useEvents((snap) => ({ crash: snap.crash, auth: snap.auth, jobs: snap.jobs }));
       const [version, setVersion] = useState('');
       const [busy, setBusy] = useState(false);
       const [notice, setNotice] = useState('');
@@ -2451,6 +2539,8 @@ window.__ModuleLoader__.load({
       });
       const [dragging, setDragging] = useState(false);
       const [logs, setLogs] = useState({ lines: [], source: null });
+      // 浮窗显示的日志来自本地轮询，这里只在任务行显示最后一行
+      const job = runningJob(events, lastLineOf(logs.lines));
       const [diag, setDiag] = useState(null);
       const [diagBusy, setDiagBusy] = useState(false);
       // 崩溃修复建议：SSE 推来的报告 + 展开/执行状态
