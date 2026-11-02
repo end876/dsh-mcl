@@ -13,6 +13,7 @@ import { applyModAction, buildFixReport, crashSummary, detectCrash } from './cra
 import { pickSource } from './source.mjs';
 import { inspectArchiveFile, inferMcFromNames } from './mods.mjs';
 import { EXPORTS_DIR } from './exportpack.mjs';
+import { parseJobProgress } from './progress.mjs';
 import { diagnoseSummary } from './diagnose.mjs';
 import { ensureFreshAuth, loadAuth, loginWithDeviceCode } from './auth.mjs';
 import { listLoaderVersions, detectLoader as detectLoaderId, loaderLabelFor } from './loader.mjs';
@@ -465,19 +466,11 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
           continue; // 这类内部标记不进日志
         }
         broadcast({ type: 'line', kind, line });
-        // 从 CLI 的进度行里抽百分比：整百分点变化才推一次，别每行都广播
-        const match = line.match(/(\d{1,3}(?:\.\d+)?)\s*%/);
-        if (!match) continue;
-        const pct = Math.max(0, Math.min(100, Math.round(Number(match[1]))));
-        if (!Number.isFinite(pct) || pct === lastPct) continue;
-        lastPct = pct;
-        const detail = line
-          .replace(/[█░▓▒]/g, ' ')
-          .replace(/^\s*\d+(?:\.\d+)?%\s*/, '')
-          .replace(/\s+/g, ' ')
-          .trim()
-          .slice(0, 120);
-        job.progress = { percent: pct, text: detail };
+        // 只有安装任务的输出可信：启动任务会混进游戏日志（“准备生成区域中: 31%”）
+        const next = parseJobProgress(kind, line);
+        if (!next || next.percent === lastPct) continue;
+        lastPct = next.percent;
+        job.progress = next;
         broadcast({ type: 'job', kind, status: 'running', meta: job.meta, progress: job.progress });
       }
     };

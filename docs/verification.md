@@ -54,6 +54,14 @@
 | 5 | `/api/mod/inspect-path` 指向不存在文件 | ✅ 400，不回显同目录文件名 |
 | 6 | 上述折腾后 `/api/state` | ✅ 200，服务存活 |
 
+## 1.1.4 启动进度误判修复（2026-11-02）
+
+| # | 项目 | 结果 |
+| --- | --- | --- |
+| 1 | 启动日志不当进度 | ✅ `parseJobProgress("launch", "…准备生成区域中: 31%")` 返回 null |
+| 2 | 安装进度仍正常 | ✅ `parseJobProgress("install", "…45.0% 12.3 MB / 27.4 MB")` → 45% |
+| 3 | 游戏运行中收起横幅 | ✅ 模拟 launch job + running=true：`banner.hidden = true`；running=false 时恢复 |
+
 ## 1.1.3 崩溃分析打磨（2026-11-02）
 
 | # | 项目 | 结果 |

@@ -256,7 +256,8 @@ function renderJobBanner() {
   const banner = ui.jobBanner;
   if (!banner) return;
   const job = store.job;
-  const active = Boolean(job && job.status === 'running');
+  // 启动任务在游戏真正跑起来后就不再是「启动中」了：收起顶部横幅，别让游戏日志/伪进度挂着
+  const active = Boolean(job && job.status === 'running') && !(job.kind === 'launch' && store.state.running);
   banner.hidden = !active;
   if (!active) return;
   const meta = job.meta || {};
