@@ -359,6 +359,24 @@ function corsFor(req) {
   return {};
 }
 
+/**
+ * Host 头只允许本机回环地址：防 DNS rebinding 把恶意域名解析到 127.0.0.1 后
+ * 用同源请求调用本地接口。缺 Host（HTTP/1.0）时放行，兼容测试/命令行。
+ */
+function hostAllowed(req) {
+  const raw = String(req.headers.host ?? '').trim().toLowerCase();
+  if (!raw) return true;
+  let host = raw;
+  if (host.startsWith('[')) {
+    const end = host.indexOf(']');
+    host = end >= 0 ? host.slice(0, end + 1) : host;
+  } else {
+    const colon = host.lastIndexOf(':');
+    if (colon >= 0) host = host.slice(0, colon);
+  }
+  return host === '127.0.0.1' || host === 'localhost' || host === '[::1]';
+}
+
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);
   try {
@@ -744,6 +762,12 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
     }
     const route = url.pathname;
     res.cors = corsFor(req);
+
+    // DNS rebinding 防护：Host 必须是本机回环地址
+    if (!hostAllowed(req)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('forbidden host');
+      return;
+    }
 
     if (HTTP_LOG) {
       const startedAt = Date.now();

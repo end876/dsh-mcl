@@ -203,12 +203,28 @@ export function readZipEntryText(file, entryName) {
  * 解压到目录，保留相对路径。
  * @param {(name: string) => boolean} filter
  */
-export function extractZip(file, outDir, filter = () => true) {
+const MAX_EXTRACT_BYTES = 8 * 1024 ** 3; // 单次解压累计写盘上限：防不可信包耗尽磁盘
+
+/**
+ * 解压到目录，保留相对路径。
+ * @param {(name: string) => boolean} filter
+ * @param {{ maxTotalBytes?: number }} [options]
+ */
+export function extractZip(file, outDir, filter = () => true, options = {}) {
+  const maxTotalBytes =
+    Number(options.maxTotalBytes) > 0 ? Number(options.maxTotalBytes) : MAX_EXTRACT_BYTES;
   const zip = openZipFile(file);
+  const created = [];
   try {
+    const selected = zip.entries.filter((entry) => filter(entry.name));
+    // 先按中央目录声明的总大小拦一次，恶意包不用真的解压到磁盘满
+    const declared = selected.reduce((sum, entry) => sum + Number(entry.size || 0), 0);
+    if (declared > maxTotalBytes) {
+      throw new Error(`解压总量超过上限（声明 ${declared} 字节 > ${maxTotalBytes}）：${file}`);
+    }
     let written = 0;
-    for (const entry of zip.entries) {
-      if (!filter(entry.name)) continue;
+    let bytes = 0;
+    for (const entry of selected) {
       // 和打包/其它解包路径共用 safeJoin：绝对路径、盘符、任何 .. 段都直接拒绝
       let resolved;
       try {
@@ -220,11 +236,27 @@ export function extractZip(file, outDir, filter = () => true) {
         ensureDir(resolved);
         continue;
       }
+      const data = zip.read(entry);
+      bytes += data.length;
+      if (bytes > maxTotalBytes) {
+        throw new Error(`解压写入超过上限（${bytes} 字节 > ${maxTotalBytes}）：${file}`);
+      }
       ensureDir(path.dirname(resolved));
-      fs.writeFileSync(resolved, zip.read(entry));
+      created.push(resolved);
+      fs.writeFileSync(resolved, data);
       written += 1;
     }
     return written;
+  } catch (error) {
+    // 失败时清掉这次已经写出的文件，别留半套 natives/JRE 被当成完整的
+    for (const target of created) {
+      try {
+        fs.unlinkSync(target);
+      } catch {
+        /* ignore */
+      }
+    }
+    throw error;
   } finally {
     zip.close();
   }

@@ -68,9 +68,10 @@ export function safeJoin(root, rel) {
   return target;
 }
 
-/** 判断 resolved 是否在 root 里面（含 root 本身） */
+/** 判断 resolved 是否在 root 里面（含 root 本身）；Windows 下按大小写不敏感比较 */
 export function isInside(root, target) {
-  const resolvedRoot = path.resolve(root);
-  const resolved = path.resolve(target);
+  const fold = (value) => (process.platform === 'win32' ? value.toLowerCase() : value);
+  const resolvedRoot = fold(path.resolve(root));
+  const resolved = fold(path.resolve(target));
   return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep);
 }

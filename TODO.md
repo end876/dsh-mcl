@@ -159,6 +159,7 @@
 ## ⬜ 待办（按优先级）
 
 ### P0
+- [ ] **非 Windows 平台**：当前只支持/优化 Windows；POSIX 的 `/api/stop` 进程组语义与 PID 身份校验（审查 B1/B2）暂不处理。
 - [x] **ZIP 文件版读取**：`zip.mjs` 新增 `openZipFile`（只读尾部 EOCD + 中央目录，条目按需读），
       inspect / importpack / import / extractZip 已切过去（1.2GB 逻辑内容识别 4ms、内存不涨）；
       剩余 loader 读 jar、mrpack 解包仍走内存版（都是小文件，暂不动）。
