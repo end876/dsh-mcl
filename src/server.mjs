@@ -502,6 +502,22 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
     return job;
   }
 
+  /** 强制结束进程后补写运行时快照：CLI 被 taskkill 时来不及自己写 stopped */
+  function markRuntimeStopped(dir, record, exitCode = null) {
+    if (!dir || !record) return;
+    try {
+      const next = {
+        ...record,
+        stopped: true,
+        stoppedAt: new Date().toISOString(),
+        exitCode: Number.isFinite(exitCode) ? exitCode : (record.exitCode ?? null),
+      };
+      fs.writeFileSync(path.join(dir, RUNTIME_NAME), `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+    } catch {
+      /* 快照写失败不影响停止流程 */
+    }
+  }
+
   function killJob(kind) {
     const job = jobs[kind];
     if (!job) return false;
@@ -545,6 +561,7 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
 
   /** 启动任务结束后：只有异常退出 / 有崩溃痕迹才自动生成修复报告并广播 */
   function handleLaunchFinished(job, cliExitCode) {
+    if (job.meta?.stopping) return; // 用户主动停止，不当崩溃分析
     const instance = job.meta?.version;
     if (!instance) return;
     // 等启动器把运行时快照和日志 flush 完，再分析
@@ -981,19 +998,51 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
           sendJson(res, 400, { error: '缺少版本号' });
           return;
         }
+        if (jobs.launch) {
+          sendJson(res, 409, { error: '已有启动任务在跑，等它结束或先停止' });
+          return;
+        }
+        if (jobs.install) {
+          sendJson(res, 409, { error: '有安装/导出任务在跑，等它结束再启动' });
+          return;
+        }
+        // 已经在跑的实例别再起第二个进程（运行时快照可能是命令行启动留下的）
+        const targetDir = safeVersionDir(version);
+        const runningRecord = targetDir ? readRuntimeRecord(targetDir) : null;
+        if (runningRecord?.pid && !runningRecord.stopped && (await probeProcess(runningRecord.pid)).alive) {
+          sendJson(res, 409, { error: `「${version}」已经在运行，先停止再启动` });
+          return;
+        }
         const args = ['launch', version, '--user', String(body.username || 'Player')];
         if (body.memory) args.push('--memory', String(body.memory));
         if (body.width) args.push('--width', String(body.width));
         if (body.height) args.push('--height', String(body.height));
         if (body.auth && (await ensureFreshAuth())) args.push('--auth');
         lastLaunched = version;
-        runJob('launch', args, { version, username: body.username || 'Player' });
+        try {
+          runJob('launch', args, { version, username: body.username || 'Player' });
+        } catch (jobError) {
+          sendJson(res, 409, { error: jobError.message });
+          return;
+        }
         sendJson(res, 200, { ok: true });
         return;
       }
 
       if (route === '/api/stop' && req.method === 'POST') {
-        let stopped = killJob('launch') || killJob('install');
+        let stopped = false;
+        const launchJob = jobs.launch;
+        if (launchJob) {
+          // 主动停止不算崩溃：别让自动诊断把 taskkill 的退出码当崩溃
+          launchJob.meta = { ...(launchJob.meta ?? {}), stopping: true };
+        }
+        if (launchJob && killJob('launch')) {
+          stopped = true;
+          const dir = safeVersionDir(launchJob.meta?.version);
+          markRuntimeStopped(dir, dir ? readRuntimeRecord(dir) : null);
+        } else if (killJob('install')) {
+          stopped = true;
+        }
         if (!stopped) {
           // 命令行 / 别处启动的游戏：按运行时快照里的 pid 收掉
           const dir = lastLaunched ? safeVersionDir(lastLaunched) : null;
@@ -1009,11 +1058,16 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
               stopped = true;
               pidProbeCache.set(Number(record.pid), { at: Date.now(), alive: false, image: null });
               memCache = { pid: 0, at: 0, value: null };
+              markRuntimeStopped(dir, record);
             } catch {
               /* ignore */
             }
+          } else if (record && !record.stopped) {
+            // 游戏已经退出，但 CLI 被强杀/来不及写快照：补一个 exited 状态
+            markRuntimeStopped(dir, record);
           }
         }
+        if (stopped) broadcast({ type: 'refresh' });
         sendJson(res, 200, { ok: stopped });
         return;
       }
@@ -1334,6 +1388,10 @@ export async function startGui({ port = 51730, open = true, openWindow = true } 
         }
         if (jobs.launch?.meta?.version === instance) {
           sendJson(res, 409, { error: '这个实例正在运行，先停止再删除' });
+          return;
+        }
+        if (jobs.install && (jobs.install.meta?.version === instance || jobs.install.meta?.version === `导出 ${instance}`)) {
+          sendJson(res, 409, { error: '这个实例正在安装/导出，等任务结束再删除' });
           return;
         }
         try {

@@ -2044,6 +2044,8 @@ function bindEvents() {
         // 崩溃时后端会自动分析并广播 crash 事件，这里只提示等待
         if (data.status === 'error') toast('游戏异常退出，正在生成修复建议…', true);
         renderLaunchState();
+        // running 刚更新过，重新算一次横幅：游戏跑起来后要把「启动中」横幅收掉
+        renderJobBanner();
       }
       return;
     }

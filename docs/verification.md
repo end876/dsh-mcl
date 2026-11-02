@@ -54,6 +54,16 @@
 | 5 | `/api/mod/inspect-path` 指向不存在文件 | ✅ 400，不回显同目录文件名 |
 | 6 | 上述折腾后 `/api/state` | ✅ 200，服务存活 |
 
+## 1.1.5 启动/停止修复（2026-11-02）
+
+| # | 项目 | 结果 |
+| --- | --- | --- |
+| 1 | 双开保护 | ✅ 第二次 `/api/launch` 返回 409「已有启动任务在跑」 |
+| 2 | 停止状态回写 | ✅ `runtime.state=exited`、`stopped=true`、`lastCrash=false`（不误报崩溃） |
+| 3 | 启动横幅收起 | ✅ UI 实测：running=true 后 `#job-banner.hidden=true` |
+| 4 | 安全探测 | ✅ exports 穿越 404 / open-url file 400 / inspect-path 外部 400 / logs 穿越 404 |
+| 5 | 模组库搜索 | ✅ 抽屉搜索 sodium 正常返回结果 |
+
 ## 1.1.4 启动进度误判修复（2026-11-02）
 
 | # | 项目 | 结果 |
